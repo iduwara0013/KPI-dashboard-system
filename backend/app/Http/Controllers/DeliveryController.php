@@ -36,9 +36,13 @@ class DeliveryController extends Controller
         $activity = $plan ? collect(app(HofWorkController::class)->activities($plan))->firstWhere('activity_code', $assignment->activity_code) : null;
         $valid = $activity && (int) $plan->owner_id === (int) $assignment->owner_id
             && $this->membership((int) $assignment->owner_id, (int) $assignment->department_id, 'hof')
-            && (int) $assignment->owner_id !== (int) $assignment->assignee_id
             && app(HofWorkController::class)->recipientRole((int) $assignment->owner_id, (int) $assignment->assignee_id, (int) $assignment->department_id) === $assignment->recipient_role
             && $assignment->source_signature === $activity['source_signature'];
+
+        if ($valid && (int) $assignment->owner_id === (int) $assignment->assignee_id) {
+            $task = $this->currentTasks($assignment)->first();
+            $valid = $task && HofReviewController::eligible((int) $task->reviewer_id, (int) $assignment->owner_id);
+        }
 
         return ['activity' => $activity, 'valid' => (bool) $valid];
     }

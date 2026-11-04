@@ -2,11 +2,15 @@
 
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\DeliveryController;
+use App\Http\Controllers\HofReviewController;
 use App\Http\Controllers\HofWorkController;
 use App\Http\Controllers\KpiAssignmentController;
+use App\Http\Controllers\MdDashboardController;
 use App\Http\Controllers\PerformancePlanController;
 use App\Http\Controllers\PersonalAllocationController;
 use App\Http\Controllers\SessionController;
+use App\Http\Middleware\EnforceExecutiveReadOnly;
+use App\Http\Middleware\EnsureWorkspaceIdentity;
 use App\Http\Middleware\RequireDeliveryAccess;
 use App\Http\Middleware\RequirePlanningAccess;
 use App\Http\Middleware\RequireSystemAdmin;
@@ -16,8 +20,9 @@ Route::get('/', function () {
     return response()->json(['application' => 'Pulse administration API', 'frontend' => 'http://127.0.0.1:5173']);
 });
 
-Route::prefix('api')->group(function () {
+Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecutiveReadOnly::class])->group(function () {
     Route::get('/session', [SessionController::class, 'show']);
+    Route::get('/md/workspace', [MdDashboardController::class, 'workspace'])->middleware('auth');
     Route::post('/login', [SessionController::class, 'login'])->middleware('throttle:5,1');
     Route::post('/logout', [SessionController::class, 'logout'])->middleware('auth');
     Route::middleware('auth')->prefix('allocations')->group(function () {
@@ -40,6 +45,8 @@ Route::prefix('api')->group(function () {
         Route::put('/assignments/{assignment}/progress', [HofWorkController::class, 'progress'])->whereNumber('assignment')->middleware('throttle:30,1');
     });
     Route::middleware(['auth', RequirePlanningAccess::class])->prefix('planning')->group(function () {
+        Route::get('/hof-reviewers', [HofReviewController::class, 'workspace']);
+        Route::post('/hof-reviewers/{assignment}', [HofReviewController::class, 'assign'])->whereNumber('assignment');
         Route::get('/workspace', [PerformancePlanController::class, 'workspace']);
         Route::get('/plans/{plan}', [PerformancePlanController::class, 'show'])->whereNumber('plan');
         Route::post('/plans', [PerformancePlanController::class, 'store'])->middleware('throttle:30,1');

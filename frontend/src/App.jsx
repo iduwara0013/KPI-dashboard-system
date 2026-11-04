@@ -5,11 +5,13 @@ import {
   LayoutDashboard, LoaderCircle, LogOut, Menu, Network, Pencil, Plus, Search,
   ShieldCheck, SlidersHorizontal, Sparkles, Trash2, UserPlus, Users, X,
 } from 'lucide-react';
-import { request } from './api.js';
+import { bindSessionIdentity, checkSessionIdentity, onAuthenticationRequired, request } from './api.js';
 import { Avatar, Brand, Badge, Empty, ErrorBox, Field, Modal } from './components.jsx';
 import PlanWorkspace from './PlanWorkspace.jsx';
 import HofWorkspace from './HofWorkspace.jsx';
 import DeliveryWorkspace from './DeliveryWorkspace.jsx';
+import SessionRecovery from './SessionRecovery.jsx';
+import MdWorkspace from './MdWorkspace.jsx';
 
 const roles = { super_admin: 'System admin', md: 'MD / executive viewer', plan_editor: 'Plan editor', member: 'Team member' };
 const responsibilities = { hof: 'Head of function', manager: 'Manager', employee: 'Employee' };
@@ -32,20 +34,38 @@ export default function App() {
   const [memberWorkspace, setMemberWorkspace] = useState('');
   const [session, setSession] = useState(undefined);
   const [bootError, setBootError] = useState(null);
-  const loadSession = () => { setBootError(null); request('/session').then(x => setSession(x.user)).catch(setBootError); };
+  const [recovery, setRecovery] = useState(null);
+  const sessionRef = useRef(session), recovering = useRef(false);
+  sessionRef.current = session;
+  const loadSession = () => { setBootError(null); request('/session').then(x => { bindSessionIdentity(x.user); setSession(x.user); }).catch(setBootError); };
   useEffect(loadSession, []);
-  function updateSession(user) { setMemberWorkspace(''); setSession(user); }
+  useEffect(() => {
+    const unsubscribe = onAuthenticationRequired(event => { if (sessionRef.current) { recovering.current = true; setRecovery(event); } });
+    const check = () => { if (sessionRef.current && !recovering.current && document.visibilityState === 'visible') checkSessionIdentity().catch(() => {}); };
+    window.addEventListener('focus', check); document.addEventListener('visibilitychange', check);
+    return () => { unsubscribe(); window.removeEventListener('focus', check); document.removeEventListener('visibilitychange', check); };
+  }, []);
+  function updateSession(user) { if (!user && recovering.current) return; bindSessionIdentity(user); setMemberWorkspace(''); setSession(user); }
+  function restored(user) {
+    if (!user || String(user.id) !== String(sessionRef.current.id) || user.system_role !== sessionRef.current.system_role) throw new Error('Account access changed. Sign out and reopen the correct workspace.');
+    bindSessionIdentity(user); recovering.current = false; setSession(user); setRecovery(null);
+  }
+  function discardSession() { recovering.current = false; setRecovery(null); bindSessionIdentity(null); setMemberWorkspace(''); setSession(null); }
   if (bootError) return <div className="boot"><img className="brand-logo" src="/cpstl-logo.png" alt="CPSTL logo" width="58" height="58" /><h2>Let’s reconnect your workspace</h2><ErrorBox error={bootError} /><button className="btn btn-primary" onClick={loadSession}>Try again</button></div>;
   if (session === undefined) return <div className="boot"><LoaderCircle className="spin" /><p>Opening your workspace…</p></div>;
   if (!session) return <Login onLogin={updateSession} />;
-  if (session.system_role === 'plan_editor') {
-    return <PlanWorkspace session={session} onSession={setSession} />;
-  }
-  if (session.system_role !== 'super_admin') {
+  let workspace;
+  if (session.system_role === 'md') {
+    workspace = <MdWorkspace session={session} onSession={updateSession} />;
+  } else if (session.system_role === 'plan_editor') {
+    workspace = <PlanWorkspace session={session} onSession={updateSession} />;
+  } else if (session.system_role !== 'super_admin') {
     const hof = session.workspaces?.includes('hof');
-    return hof && memberWorkspace !== 'delivery' ? <HofWorkspace session={session} onSession={updateSession} onDelivery={() => setMemberWorkspace('delivery')} /> : <DeliveryWorkspace session={session} onSession={updateSession} onHof={hof ? () => setMemberWorkspace('hof') : null} />;
+    workspace = hof && memberWorkspace !== 'delivery' ? <HofWorkspace session={session} onSession={updateSession} onDelivery={() => setMemberWorkspace('delivery')} /> : <DeliveryWorkspace session={session} onSession={updateSession} onHof={hof ? () => setMemberWorkspace('hof') : null} />;
+  } else {
+    workspace = <Workspace session={session} onSession={updateSession} />;
   }
-  return <Workspace session={session} onSession={setSession} />;
+  return <><div inert={recovery ? true : undefined} aria-hidden={recovery ? true : undefined}>{workspace}</div>{recovery && <SessionRecovery user={session} reason={recovery.reason} onRestored={restored} onDiscard={discardSession} />}</>;
 }
 
 function Login({ onLogin }) {

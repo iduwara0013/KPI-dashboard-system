@@ -113,6 +113,22 @@ class PerformancePlanningTest extends TestCase
         $this->getJson('/api/planning/workspace')->assertJsonCount(0, 'plans');
     }
 
+    public function test_expired_editor_session_can_reauthenticate_and_retry_draft_creation_once(): void
+    {
+        [$hof, $departments] = $this->hof();
+        $editor = $this->editor();
+        $payload = $this->payload($hof, $departments);
+        $payload['kpas'] = [];
+        $this->withHeader('X-Workspace-User', (string) $editor->id);
+        $this->postJson('/api/planning/plans', $payload)->assertUnauthorized();
+        $this->assertDatabaseCount('performance_plans', 0);
+
+        $this->postJson('/api/login', ['email' => $editor->email, 'password' => 'password'])->assertOk();
+        $this->postJson('/api/planning/plans', $payload)->assertCreated();
+        $this->assertDatabaseCount('performance_plans', 1);
+        $this->assertDatabaseHas('performance_plans', ['owner_id' => $hof->id, 'status' => 'draft']);
+    }
+
     public function test_one_personal_plan_per_hof_year_and_department_scope_are_enforced(): void
     {
         [$hof, $departments] = $this->hof();

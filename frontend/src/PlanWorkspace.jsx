@@ -9,6 +9,7 @@ import { request } from './api.js';
 import { Avatar, Badge, Brand, Empty, ErrorBox, Field, Modal } from './components.jsx';
 import './planning.css';
 import PersonalAllocationWorkspace from './PersonalAllocationWorkspace.jsx';
+import HofReviewers from './HofReviewers.jsx';
 
 const emptyWorkspace = { plans: [], owners: [], departments: [], memberships: [], can_edit: false };
 const sameId = (a, b) => String(a) === String(b);
@@ -83,6 +84,7 @@ export default function PlanWorkspace({ session, onSession, onWork }) {
   const years = [...new Set(data.plans.map(plan => plan.year))].sort((a, b) => b - a);
   const canCreate = editor && data.owners.length > 0;
   if (page === 'allocations') return <PersonalAllocationWorkspace session={session} onBack={() => navigate('overview')} />;
+  if (page === 'reviewers' && editor) return <HofReviewers onBack={() => navigate('overview')} />;
 
   return <div className="app-shell planning-shell">
     {mobileNav && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
@@ -90,6 +92,7 @@ export default function PlanWorkspace({ session, onSession, onWork }) {
       <a className="brand" href="#planning" aria-label="CPSTL performance planning overview" onClick={e => { e.preventDefault(); navigate('overview'); }}><Brand /></a>
       <div className="workspace-label"><span className="workspace-dot" /> PERFORMANCE WORKSPACE</div><div className="nav-caption">{editor ? 'PLAN EDITOR' : 'MY PERFORMANCE'}</div>
       <nav aria-label="Performance planning">{[
+        ...(editor ? [['reviewers', 'HOF work reviewers', ShieldCheck]] : []),
         ['overview', 'Overview', LayoutDashboard], ['plans', editor ? 'Performance plans' : 'My published plans', FolderTree], ['history', 'Plan history', History],
       ].map(([id, label, Icon]) => <button key={id} className={`nav-item ${page === id && !detail ? 'nav-active' : ''}`} onClick={() => navigate(id)}><Icon size={19} /><span>{label}</span>{id === 'plans' && <span className="nav-count">{data.plans.length}</span>}</button>)}
         {onWork && <button className="nav-item" onClick={onWork}><ArrowLeft size={19} /><span>Work dashboard</span></button>}

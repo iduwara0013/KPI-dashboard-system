@@ -96,6 +96,66 @@ class MixedAssignmentsTest extends TestCase
         $this->assertSame('Direct HOF work', $this->allocation($this->employee)['entries'][0]['kind']);
     }
 
+    public function test_complete_kpi_manager_employee_review_workflow_preserves_hof_and_personal_weights(): void
+    {
+        $this->actingAs($this->editor);
+        $draft = $this->getJson('/api/planning/plans/'.$this->plan)->json('plan');
+        $draft['kpas'][0]['weight'] = 0.6;
+        foreach ($draft['kpas'][0]['kpis'][0]['activities'] as &$activity) {
+            $activity['weight'] = 0.5;
+            $activity['due_date'] = '2026-12-15';
+        }
+        unset($activity);
+        $second = $draft['kpas'][0];
+        $second['code'] = 'KPA-OTHER';
+        $second['weight'] = 0.4;
+        $second['kpis'][0]['code'] = 'KPI-OTHER';
+        $second['kpis'][0]['activities'] = [['code' => 'ACT-OTHER', 'title' => 'Other responsibility', 'weight' => 1]];
+        $draft['kpas'][] = $second;
+        $this->putJson('/api/planning/plans/'.$this->plan, $draft)->assertOk();
+        $this->postJson('/api/planning/plans/'.$this->plan.'/publish', ['revision' => 3])->assertOk();
+
+        $this->actingAs($this->hof)->postJson('/api/hof/kpi-assignments', [
+            ...$this->kpiPayload($this->manager), 'source_revision' => 4, 'due_date' => '2026-12-15',
+        ])->assertOk();
+        $assignments = DB::table('work_assignments')->orderBy('activity_code')->get();
+        $this->assertCount(2, $assignments);
+        foreach ($assignments as $assignment) {
+            $this->actingAs($this->manager)->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', [
+                'version' => $assignment->version,
+                'tasks' => [['title' => 'Deliver '.$assignment->activity_code, 'assignee_id' => $assignment->activity_code === 'ACT-A' ? $this->employee->id : $this->manager->id, 'weight' => 1, 'due_date' => '2026-12-15']],
+            ])->assertOk();
+        }
+        $this->saveAllocation($this->manager, $this->allocation($this->manager), [1]);
+        $this->publishAllocation($this->manager);
+        $this->saveAllocation($this->hof, $this->allocation($this->hof), [0.6, 0.4]);
+        $this->publishAllocation($this->hof);
+
+        $employeeTask = DB::table('delivery_tasks')->where('assignee_id', $this->employee->id)->first();
+        $this->actingAs($this->employee)->putJson('/api/delivery/tasks/'.$employeeTask->id.'/progress', ['version' => 1, 'reported_progress' => 70, 'progress_note' => 'Delivery underway.'])->assertOk();
+        $this->assertEquals(0, $this->allocation($this->hof)['score']['confirmed_completion']);
+        $this->actingAs($this->employee)->postJson('/api/delivery/tasks/'.$employeeTask->id.'/submit', ['version' => 2, 'evidence' => 'Completed and verified network upgrade.'])->assertOk();
+        $submission = DB::table('task_submissions')->where('task_id', $employeeTask->id)->value('id');
+        $this->assertEquals(0, $this->allocation($this->manager)['score']['confirmed_completion']);
+        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 3, 'decision' => 'needs_changes', 'review_note' => 'Include the validation results.'])->assertOk();
+        $this->actingAs($this->employee)->postJson('/api/delivery/tasks/'.$employeeTask->id.'/submit', ['version' => 4, 'evidence' => 'Completed upgrade with validation results.'])->assertOk();
+        $submission = DB::table('task_submissions')->where('task_id', $employeeTask->id)->orderByDesc('id')->value('id');
+        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 5, 'decision' => 'approved'])->assertOk();
+        $this->assertEquals(50, $this->allocation($this->manager)['score']['confirmed_completion']);
+        $this->assertEquals(30, $this->allocation($this->hof)['score']['confirmed_completion']);
+        $this->actingAs($this->hof)->getJson('/api/hof/workspace')->assertJsonPath('kpis.0.confirmed_progress', 50);
+
+        $ownTask = DB::table('delivery_tasks')->where('assignee_id', $this->manager->id)->first();
+        $this->actingAs($this->manager)->postJson('/api/delivery/tasks/'.$ownTask->id.'/submit', ['version' => 1, 'evidence' => 'Server delivery completed and validated.'])->assertOk();
+        $submission = DB::table('task_submissions')->where('task_id', $ownTask->id)->value('id');
+        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertForbidden();
+        $this->actingAs($this->hof)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $this->assertEquals(100, $this->allocation($this->manager)['score']['confirmed_completion']);
+        $this->assertEquals(60, $this->allocation($this->hof)['score']['confirmed_completion']);
+        $this->assertDatabaseCount('task_submissions', 3);
+        $this->assertDatabaseCount('work_assignments', 2);
+    }
+
     public function test_direct_employee_work_is_reviewed_by_hof_and_rolls_up_once(): void
     {
         $assignment = $this->assignActivity('ACT-A', $this->employee, 0, ['proposed_personal_weight' => 0.2]);
@@ -115,6 +175,40 @@ class MixedAssignmentsTest extends TestCase
         $this->assertSame(100, $published['score']['confirmed_completion']);
     }
 
+    public function test_hof_own_work_needs_independent_designated_review_and_invalid_reviewer_suppresses_score(): void
+    {
+        $id = $this->assignActivity('ACT-A', $this->hof);
+        $reviewer = $this->user('EMP002');
+        $endpoint = '/api/planning/hof-reviewers/'.$id;
+        $this->postJson($endpoint, ['version' => 1, 'reviewer_id' => $reviewer->id])->assertForbidden();
+        $this->actingAs($this->editor)->postJson($endpoint, ['version' => 1, 'reviewer_id' => $this->hof->id])->assertUnprocessable();
+        $this->postJson($endpoint, ['version' => 1, 'reviewer_id' => $this->employee->id])->assertUnprocessable();
+        $this->postJson($endpoint, ['version' => 1, 'reviewer_id' => $reviewer->id])->assertOk();
+        $this->postJson($endpoint, ['version' => 1, 'reviewer_id' => $reviewer->id])->assertConflict();
+        $task = DB::table('delivery_tasks')->where('assignment_id', $id)->first();
+        $this->actingAs($this->hof)->getJson('/api/delivery/workspace')->assertJsonCount(1, 'tasks');
+        $this->putJson('/api/hof/assignments/'.$id.'/progress', ['version' => 2, 'reported_progress' => 100, 'progress_note' => 'Bypass attempt'])->assertConflict();
+        $this->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => 1, 'evidence' => 'HOF coordination completed with supporting records.'])->assertOk();
+        $submission = DB::table('task_submissions')->where('task_id', $task->id)->value('id');
+        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertForbidden();
+        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertForbidden();
+        $this->actingAs($reviewer)->getJson('/api/delivery/workspace')->assertJsonCount(1, 'reviews');
+        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'needs_changes', 'review_note' => 'Include the signed record.'])->assertOk();
+        $this->actingAs($this->hof)->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => 3, 'evidence' => 'Signed coordination record provided.'])->assertOk();
+        $submission = DB::table('task_submissions')->where('task_id', $task->id)->orderByDesc('id')->value('id');
+        $this->actingAs($reviewer)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 4, 'decision' => 'approved'])->assertOk();
+        $this->actingAs($this->hof)->getJson('/api/hof/workspace')->assertJsonPath('activities.0.assignment.confirmed_progress', 100);
+        $this->assertEquals(40, $this->allocation($this->hof)['entries'][0]['confirmed_progress']);
+        $reviewer->update(['is_active' => false]);
+        $this->actingAs($this->hof)->getJson('/api/hof/workspace')->assertJsonPath('activities.0.assignment.confirmed_progress', 0);
+        $this->assertEquals(0, $this->allocation($this->hof)['entries'][0]['confirmed_progress']);
+        $version = DB::table('work_assignments')->where('id', $id)->value('version');
+        $this->actingAs($this->editor)->postJson($endpoint, ['version' => $version, 'reviewer_id' => $this->user('EMP003')->id])->assertOk();
+        $this->assertDatabaseCount('task_submissions', 2);
+        $this->assertDatabaseHas('delivery_tasks', ['id' => $task->id, 'is_active' => false]);
+        $this->assertDatabaseHas('work_assignments', ['id' => $id, 'confirmed_progress' => 0]);
+    }
+
     public function test_full_kpi_can_go_directly_to_employee_without_duplicate_personal_entries(): void
     {
         $this->postJson('/api/hof/kpi-assignments', $this->kpiPayload($this->employee))->assertOk();
@@ -123,6 +217,27 @@ class MixedAssignmentsTest extends TestCase
         $this->assertCount(1, $this->allocation($this->employee)['entries']);
         $assignment = DB::table('work_assignments')->first();
         $this->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version, 'tasks' => [['title' => 'Tampered task', 'assignee_id' => $this->employee->id, 'weight' => 1]]])->assertForbidden();
+    }
+
+    public function test_md_dashboard_tracks_approved_published_work_and_pending_reviews_without_duplicates(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 20));
+        $id = $this->assignActivity('ACT-A', $this->employee, 0, ['due_date' => '2026-11-15']);
+        $task = DB::table('delivery_tasks')->where('assignment_id', $id)->first();
+        $this->actingAs($this->employee)->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => 1, 'evidence' => 'Network delivery complete.'])->assertOk();
+        $md = User::factory()->create(['system_role' => 'md', 'is_active' => true]);
+        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertOk()->assertJsonCount(2, 'activities')->assertJsonPath('activities.0.pending', 1)->assertJsonPath('activities.0.approved', 0)->assertJsonPath('activities.0.overdue', true)->assertJsonPath('activities.0.tasks.0.reviewer', $this->hof->name)->assertJsonMissingPath('activities.0.tasks.0.evidence');
+        $this->getJson('/api/md/workspace?year=2025')->assertJsonCount(0, 'activities');
+        $submission = DB::table('task_submissions')->value('id');
+        $this->actingAs($this->hof)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertJsonPath('activities.0.approved', 100)->assertJsonPath('activities.0.pending', 0)->assertJsonPath('activities.0.overdue', false);
+        $this->actingAs($this->editor);
+        $draft = $this->getJson('/api/planning/plans/'.$this->plan)->json('plan');
+        $draft['kpas'][0]['kpis'][0]['activities'][0]['title'] = 'Unpublished change';
+        $this->putJson('/api/planning/plans/'.$this->plan, $draft)->assertOk();
+        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertJsonPath('activities.0.activity', 'Network upgrade')->assertJsonPath('activities.0.approved', 100);
+        $this->actingAs($this->editor)->postJson('/api/planning/plans/'.$this->plan.'/publish', ['revision' => 3])->assertOk();
+        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertJsonPath('activities.0.approved', 0)->assertJsonPath('activities.0.needs_review', true);
     }
 
     public function test_individual_overrides_survive_kpi_delegation_and_can_restore_inheritance(): void

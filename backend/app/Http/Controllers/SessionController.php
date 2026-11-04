@@ -29,7 +29,7 @@ class SessionController extends Controller
 
         $request->session()->regenerate();
 
-        if ($request->user()->system_role !== 'super_admin' && ! RequirePlanningAccess::canView($request->user()) && RequireDeliveryAccess::roles($request->user()) === []) {
+        if (! in_array($request->user()->system_role, ['super_admin', 'md'], true) && ! RequirePlanningAccess::canView($request->user()) && RequireDeliveryAccess::roles($request->user()) === []) {
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();

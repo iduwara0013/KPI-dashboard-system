@@ -37,6 +37,9 @@ class KpiAssignmentController extends Controller
 
         return array_map(function (array $row) use ($plan, $assignments): array {
             $assignment = $assignments->get($row['activity_code']);
+            if ($assignment && (int) $assignment->owner_id === (int) $assignment->assignee_id && ! app(DeliveryController::class)->context($assignment)['valid']) {
+                $assignment->confirmed_progress = 0;
+            }
             $eligible = ! $assignment || app(HofWorkController::class)->recipientRole((int) $plan->owner_id, (int) $assignment->assignee_id, $row['department_id']) === $assignment->recipient_role;
 
             return [...$row, 'assignment' => $assignment, 'source_changed' => $assignment && $assignment->source_signature !== $row['source_signature'], 'assignee_eligible' => $eligible];

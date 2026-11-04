@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { LoaderCircle, Target, UserCheck } from 'lucide-react';
 import { request } from './api.js';
 import { ErrorBox, Field } from './components.jsx';
+import { initialAssignmentDeadline, planAssignmentDeadline } from './assignmentDeadline.js';
 
 const same = (a, b) => String(a) === String(b);
 const pct = value => `${Number((Number(value) * 100).toFixed(2))}%`;
@@ -10,7 +11,8 @@ export default function MixedAssignmentForm({ kind, row, managers, employees, se
   const record = kpi ? row.delegation : row.assignment;
   const initialRole = same(record?.assignee_id, session.id) ? 'own' : employees.some(person => same(person.id, record?.assignee_id) && same(person.department_id, row.department_id)) ? 'employee' : 'manager';
   const [role, setRole] = useState(initialRole), [inherit, setInherit] = useState(false);
-  const [form, setForm] = useState({ assignee_id: record?.assignee_id || '', due_date: record?.due_date?.slice(0, 10) || (!kpi ? row.due_date : '') || '', instructions: record?.instructions || '', personal_weight: '' });
+  const planDeadline = planAssignmentDeadline(kind, row);
+  const [form, setForm] = useState({ assignee_id: record?.assignee_id || '', due_date: initialAssignmentDeadline(kind, row), instructions: record?.instructions || '', personal_weight: '' });
   const [busy, setBusy] = useState(false), [error, setError] = useState(null);
   const eligible = (role === 'employee' ? employees : managers).filter(person => same(person.department_id, row.department_id));
   const recipient = inherit ? row.delegation.assignee_id : role === 'own' ? session.id : form.assignee_id;
@@ -33,7 +35,7 @@ export default function MixedAssignmentForm({ kind, row, managers, employees, se
     {!kpi && row.delegation && <label className="mixed-inherit"><input type="checkbox" checked={inherit} onChange={e => setInherit(e.target.checked)} />Use the KPI’s delegated owner for this activity</label>}
     {!inherit && role !== 'own' ? <Field label={role === 'employee' ? 'Direct employee' : 'Responsible manager'} required><select required value={form.assignee_id} onChange={e => setForm({ ...form, assignee_id: e.target.value })}><option value="">Choose a person in this department</option>{eligible.map(person => <option key={person.id} value={person.id}>{person.name} · {person.designation}</option>)}</select></Field> : <div className="form-note"><UserCheck size={18} /><span>{inherit ? 'Ownership follows the current KPI delegation.' : `My own work · ${session.name}`}</span></div>}
     {!inherit && role !== 'own' && !eligible.length && <div className="hof-review-note">No eligible {role === 'employee' ? 'employees' : 'reporting managers'} were found in this department. Ask an administrator to connect the reporting structure.</div>}
-    <Field label="Assignment deadline"><input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></Field>
+    <Field label="Assignment deadline" hint={record ? 'Your saved deadline is shown. You can change it.' : planDeadline ? (kpi ? 'Filled from the latest activity deadline in this KPI. You can change it.' : 'Filled from the activity deadline in the plan. You can change it.') : 'No activity deadline is set in the plan. Choose a date if needed.'}><input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></Field>
     <Field label="Instructions"><textarea rows={3} maxLength={1000} value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })} /></Field>
     {role !== 'own' && !covered && <Field label="Proposed personal-plan weight (%)" hint="Optional. The Plan Editor balances all of this person’s responsibilities to 100% before publication."><input type="number" min="0" max="100" step="0.01" value={form.personal_weight} onChange={e => setForm({ ...form, personal_weight: e.target.value })} placeholder="e.g. 40" /></Field>}
     {covered && <div className="form-note">This activity belongs to the same person’s delegated KPI. It is included in that linked KPA, so no second personal weight is added.</div>}

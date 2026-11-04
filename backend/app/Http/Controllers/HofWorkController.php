@@ -124,6 +124,10 @@ class HofWorkController extends Controller
                     $assignment->reported_progress = (float) $assignment->reported_progress;
                     $assignment->confirmed_progress = (float) $assignment->confirmed_progress;
                     $assignment->due_date = $assignment->due_date ? substr((string) $assignment->due_date, 0, 10) : null;
+                    $assignment->own_review_configured = (int) $assignment->owner_id === (int) $assignment->assignee_id && DB::table('delivery_tasks')->where('assignment_id', $assignment->id)->where('generation', $assignment->delivery_generation)->where('is_active', true)->exists();
+                    if ((int) $assignment->owner_id === (int) $assignment->assignee_id && ! app(DeliveryController::class)->context($assignment)['valid']) {
+                        $assignment->confirmed_progress = 0;
+                    }
                 }
                 $eligible = ! $assignment || $this->recipientRole($owner, (int) $assignment->assignee_id, $activity['department_id']) === $assignment->recipient_role;
                 $delegation = $delegations->first(fn ($row) => (int) $row->plan_id === $activity['plan_id'] && $row->kpi_code === $activity['kpi_code']);
@@ -264,6 +268,7 @@ class HofWorkController extends Controller
             $record = DB::table('work_assignments')->where('id', $assignment)->lockForUpdate()->first();
             abort_unless((int) $record->assignee_id === $request->user()->id && (int) $record->version === (int) $data['version'], 409, 'This assignment changed. Refresh before saving.');
             $activity = collect($this->activities($plan))->firstWhere('activity_code', $record->activity_code);
+            abort_if(DB::table('delivery_tasks')->where('assignment_id', $assignment)->where('generation', $record->delivery_generation)->where('is_active', true)->exists(), 409, 'Use Task reviews & delivery to update and submit this work for approval.');
             abort_unless($activity && in_array($activity['department_id'], $departments, true) && $record->source_signature === $activity['source_signature'], 409, 'The published activity changed. Review its assignment before updating progress.');
             $attributes = ['reported_progress' => round((float) $data['reported_progress'], 2), 'progress_note' => $data['progress_note'], 'version' => $record->version + 1, 'updated_at' => now()];
             DB::table('work_assignments')->where('id', $assignment)->update($attributes);
