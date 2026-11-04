@@ -1,0 +1,406 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Middleware\RequirePlanningAccess;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use stdClass;
+
+class PerformancePlanController extends Controller
+{
+    public function workspace(Request $request): JsonResponse
+    {
+        $editor = RequirePlanningAccess::canEdit($request->user());
+        $memberships = DB::table('department_memberships')
+            ->join('departments', 'departments.id', '=', 'department_memberships.department_id')
+            ->join('users', 'users.id', '=', 'department_memberships.user_id')
+            ->where('responsibility', 'hof')->where('departments.is_active', true)->where('users.is_active', true)
+            ->when(! $editor, fn ($query) => $query->where('user_id', $request->user()->id))
+            ->select('user_id', 'department_id')->get();
+        $ownerIds = $memberships->pluck('user_id')->unique();
+        $plans = DB::table('performance_plans')
+            ->when(! $editor, fn ($query) => $query->where('owner_id', $request->user()->id)->whereNotNull('published_revision'))
+            ->orderByDesc('updated_at')->get()->map(function (stdClass $plan) use ($editor): array {
+                $document = $this->document($plan, ! $editor);
+
+                return $this->summary($plan, $document, $editor);
+            });
+
+        return response()->json([
+            'can_edit' => $editor,
+            'plans' => $plans,
+            'owners' => DB::table('users')->whereIn('id', $ownerIds)->orderBy('name')
+                ->get(['id', 'name', 'employee_number', 'designation']),
+            'departments' => DB::table('departments')->whereIn('id', $memberships->pluck('department_id')->unique())
+                ->orderBy('name')->get(['id', 'name', 'code', 'color']),
+            'memberships' => $memberships,
+        ]);
+    }
+
+    public function show(Request $request, int $plan): JsonResponse
+    {
+        $record = $this->findAuthorized($request, $plan);
+        $editor = RequirePlanningAccess::canEdit($request->user());
+        $document = $this->document($record, ! $editor);
+        $versions = DB::table('performance_plan_versions')
+            ->join('users', 'users.id', '=', 'performance_plan_versions.actor_id')
+            ->where('plan_id', $plan)->when(! $editor, fn ($query) => $query->where('event', 'published'))
+            ->orderByDesc('version')->get(['performance_plan_versions.id', 'version', 'event', 'changes', 'performance_plan_versions.created_at', 'users.name as actor_name'])
+            ->map(function (stdClass $version): stdClass {
+                $version->changes = json_decode($version->changes, true);
+
+                return $version;
+            });
+
+        return response()->json([
+            'plan' => $document,
+            'can_edit' => $editor,
+            'published_revision' => $record->published_revision,
+            'issues' => $editor ? $this->publicationIssues($document) : [],
+            'versions' => $versions,
+        ]);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $this->requireEditor($request);
+        $data = $this->validatedDocument($request);
+        $id = DB::transaction(function () use ($request, $data): int {
+            DB::table('users')->where('id', $data['owner_id'])->lockForUpdate()->first();
+            if (DB::table('performance_plans')->where('code', $data['code'])->exists()) {
+                throw ValidationException::withMessages(['code' => 'This plan ID already exists.']);
+            }
+            if (DB::table('performance_plans')->where('owner_id', $data['owner_id'])->where('year', $data['year'])->exists()) {
+                throw ValidationException::withMessages(['owner_id' => 'This HOF already has a plan for this year. Add all departments to that personal plan.']);
+            }
+            $this->validateOwnership($data);
+            $id = DB::table('performance_plans')->insertGetId([
+                'code' => $data['code'], 'title' => $data['title'], 'owner_id' => $data['owner_id'],
+                'created_by' => $request->user()->id, 'year' => $data['year'], 'status' => 'draft',
+                'revision' => 1, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            $changes = $this->saveItems($id, $data);
+            $this->recordVersion($request, $id, 'created', $changes);
+
+            return $id;
+        });
+
+        return response()->json(['id' => $id], 201);
+    }
+
+    public function update(Request $request, int $plan): JsonResponse
+    {
+        $this->requireEditor($request);
+        $this->findAuthorized($request, $plan);
+        $data = $this->validatedDocument($request, true);
+        DB::transaction(function () use ($request, $plan, $data): void {
+            $record = DB::table('performance_plans')->where('id', $plan)->lockForUpdate()->first();
+            abort_unless((int) $record->revision === (int) $data['revision'], 409, 'Someone changed this plan. Reload it before saving again.');
+            if ($record->code !== $data['code'] || (int) $record->owner_id !== $data['owner_id'] || (int) $record->year !== $data['year']) {
+                throw ValidationException::withMessages(['code' => 'The plan ID, HOF and year cannot change after creation.']);
+            }
+            $this->validateOwnership($data);
+            $changes = $this->saveItems($plan, $data);
+            if ($record->title !== $data['title']) {
+                $changes[] = ['type' => 'updated', 'code' => $record->code, 'title' => 'Plan title', 'fields' => [
+                    'title' => ['before' => $record->title, 'after' => $data['title']],
+                ]];
+            }
+            if ($changes === []) {
+                return;
+            }
+            DB::table('performance_plans')->where('id', $plan)->update([
+                'title' => $data['title'], 'status' => 'draft', 'revision' => $record->revision + 1, 'updated_at' => now(),
+            ]);
+            $this->recordVersion($request, $plan, 'updated', $changes);
+        });
+
+        return response()->json(['id' => $plan]);
+    }
+
+    public function publish(Request $request, int $plan): JsonResponse
+    {
+        $this->requireEditor($request);
+        $request->validate(['revision' => ['required', 'integer', 'min:1']]);
+        DB::transaction(function () use ($request, $plan): void {
+            $record = DB::table('performance_plans')->where('id', $plan)->lockForUpdate()->first();
+            abort_unless($record, 404);
+            abort_unless((int) $record->revision === (int) $request->integer('revision'), 409, 'Someone changed this plan. Reload it before publishing.');
+            abort_if($record->status === 'published', 409, 'This version is already published.');
+            $document = $this->document($record);
+            $this->validateOwnership($document);
+            $issues = $this->publicationIssues($document);
+            if ($issues !== []) {
+                throw ValidationException::withMessages(['publication' => $issues]);
+            }
+            DB::table('performance_plans')->where('id', $plan)->update([
+                'status' => 'published', 'revision' => $record->revision + 1,
+                'published_revision' => $record->revision + 1, 'published_at' => now(), 'updated_at' => now(),
+            ]);
+            $this->recordVersion($request, $plan, 'published', []);
+        });
+
+        return response()->json(['id' => $plan]);
+    }
+
+    private function requireEditor(Request $request): void
+    {
+        abort_unless(RequirePlanningAccess::canEdit($request->user()), 403, 'Only plan editors can change performance plans.');
+    }
+
+    private function findAuthorized(Request $request, int $id): stdClass
+    {
+        $record = DB::table('performance_plans')->find($id);
+        abort_unless($record, 404);
+        abort_unless(RequirePlanningAccess::canEdit($request->user()) ||
+            ((int) $record->owner_id === $request->user()->id && $record->published_revision !== null), 403);
+
+        return $record;
+    }
+
+    private function validatedDocument(Request $request, bool $updating = false): array
+    {
+        $data = $request->validate([
+            'code' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
+            'title' => ['required', 'string', 'max:180'],
+            'owner_id' => ['required', 'integer', Rule::exists('users', 'id')->where('is_active', true)],
+            'year' => ['required', 'integer', 'between:2000,2100'],
+            'revision' => [$updating ? 'required' : 'nullable', 'integer', 'min:1'],
+            'kpas' => ['present', 'array', 'max:20'],
+            'kpas.*.code' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
+            'kpas.*.title' => ['required', 'string', 'max:1000'],
+            'kpas.*.department_id' => ['required', 'integer', 'exists:departments,id'],
+            'kpas.*.category' => ['nullable', 'string', 'max:100'],
+            'kpas.*.weight' => ['nullable', 'numeric', 'between:0,1'],
+            'kpas.*.notes' => ['nullable', 'string', 'max:1000'],
+            'kpas.*.kpis' => ['present', 'array', 'max:30'],
+            'kpas.*.kpis.*.code' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
+            'kpas.*.kpis.*.title' => ['required', 'string', 'max:1000'],
+            'kpas.*.kpis.*.weight' => ['nullable', 'numeric', 'between:0,1'],
+            'kpas.*.kpis.*.target_value' => ['nullable', 'numeric', 'between:-9999999999999,9999999999999'],
+            'kpas.*.kpis.*.target_unit' => ['nullable', Rule::in(['percent', 'count', 'LKR', 'days', 'hours', 'other'])],
+            'kpas.*.kpis.*.frequency' => ['nullable', Rule::in(['Monthly', 'Quarterly', 'Annually', 'On completion'])],
+            'kpas.*.kpis.*.direction' => ['nullable', Rule::in(['higher', 'lower'])],
+            'kpas.*.kpis.*.notes' => ['nullable', 'string', 'max:1000'],
+            'kpas.*.kpis.*.activities' => ['present', 'array', 'max:50'],
+            'kpas.*.kpis.*.activities.*.code' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
+            'kpas.*.kpis.*.activities.*.title' => ['required', 'string', 'max:1000'],
+            'kpas.*.kpis.*.activities.*.weight' => ['nullable', 'numeric', 'between:0,1'],
+            'kpas.*.kpis.*.activities.*.due_date' => ['nullable', 'date_format:Y-m-d'],
+            'kpas.*.kpis.*.activities.*.notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+        $data['owner_id'] = (int) $data['owner_id'];
+        $data['year'] = (int) $data['year'];
+        $data['code'] = strtoupper($data['code']);
+        $codes = [];
+        $normalize = function (array &$item) use (&$codes): void {
+            $item['code'] = strtoupper($item['code']);
+            if (isset($codes[$item['code']])) {
+                throw ValidationException::withMessages(['kpas' => 'Each KPA, KPI and activity must have a different item ID.']);
+            }
+            $codes[$item['code']] = true;
+            if (count($codes) > 1000) {
+                throw ValidationException::withMessages(['kpas' => 'A plan can contain up to 1,000 items.']);
+            }
+            $item['weight'] = isset($item['weight']) ? round((float) $item['weight'], 4) : null;
+            if (isset($item['target_value'])) {
+                $item['target_value'] = round((float) $item['target_value'], 4);
+            }
+        };
+        foreach ($data['kpas'] as &$kpa) {
+            $normalize($kpa);
+            $kpa['department_id'] = (int) $kpa['department_id'];
+            foreach ($kpa['kpis'] as &$kpi) {
+                $normalize($kpi);
+                foreach ($kpi['activities'] as &$activity) {
+                    $normalize($activity);
+                }
+                unset($activity);
+            }
+            unset($kpi);
+        }
+        unset($kpa);
+
+        return $data;
+    }
+
+    private function validateOwnership(array $document): void
+    {
+        $allowed = DB::table('department_memberships')
+            ->join('departments', 'departments.id', '=', 'department_memberships.department_id')
+            ->join('users', 'users.id', '=', 'department_memberships.user_id')
+            ->where('user_id', $document['owner_id'])->where('responsibility', 'hof')
+            ->where('departments.is_active', true)->where('users.is_active', true)->pluck('department_id')->map(fn ($id) => (int) $id)->all();
+        if ($allowed === []) {
+            throw ValidationException::withMessages(['owner_id' => 'Select an active HOF with an active department assignment.']);
+        }
+        foreach ($document['kpas'] as $kpa) {
+            if (! in_array((int) $kpa['department_id'], $allowed, true)) {
+                throw ValidationException::withMessages(['kpas' => 'Each KPA must belong to a department led by the selected HOF.']);
+            }
+        }
+    }
+
+    private function publicationIssues(array $document): array
+    {
+        $issues = [];
+        $checkWeights = function (array $items, string $label) use (&$issues): void {
+            if ($items === []) {
+                $issues[] = $label.': add at least one item.';
+            } elseif (count(array_filter($items, fn ($item) => $item['weight'] === null)) > 0) {
+                $issues[] = $label.': enter every weight.';
+            } elseif (abs(array_sum(array_column($items, 'weight')) - 1) > 0.00005) {
+                $issues[] = $label.': weights must total 100%.';
+            }
+        };
+        $checkWeights($document['kpas'], 'Personal plan KPA allocation');
+        foreach ($document['kpas'] as $kpa) {
+            $checkWeights($kpa['kpis'], $kpa['code'].' KPI allocation');
+            foreach ($kpa['kpis'] as $kpi) {
+                if ($kpi['target_value'] === null || ! $kpi['target_unit']) {
+                    $issues[] = $kpi['code'].': enter a target value and unit.';
+                }
+                if (! $kpi['frequency'] || ! $kpi['direction']) {
+                    $issues[] = $kpi['code'].': choose monitoring frequency and target direction.';
+                }
+                $checkWeights($kpi['activities'], $kpi['code'].' activity allocation');
+            }
+        }
+
+        return $issues;
+    }
+
+    private function saveItems(int $planId, array $document): array
+    {
+        $existing = DB::table('performance_plan_items')->where('plan_id', $planId)->get()->keyBy('code');
+        $seen = [];
+        $changes = [];
+        $write = function (array $item, string $kind, int $departmentId, ?int $parentId, int $order) use ($planId, $existing, &$seen, &$changes): int {
+            $attributes = [
+                'parent_id' => $parentId, 'department_id' => $departmentId, 'kind' => $kind, 'title' => $item['title'],
+                'category' => $item['category'] ?? null, 'weight' => $item['weight'],
+                'target_value' => $item['target_value'] ?? null, 'target_unit' => $item['target_unit'] ?? null,
+                'frequency' => $item['frequency'] ?? null, 'direction' => $item['direction'] ?? null,
+                'due_date' => $item['due_date'] ?? null, 'notes' => $item['notes'] ?? null,
+                'display_order' => $order, 'is_active' => true,
+            ];
+            $old = $existing->get($item['code']);
+            if ($old && $old->kind !== $kind) {
+                throw ValidationException::withMessages(['kpas' => 'An existing item ID cannot change between KPA, KPI and activity.']);
+            }
+            $fields = [];
+            if ($old) {
+                foreach ($attributes as $field => $value) {
+                    $before = $old->{$field};
+                    $same = in_array($field, ['weight', 'target_value'], true)
+                        ? (($before === null && $value === null) || ($before !== null && $value !== null && abs((float) $before - (float) $value) < 0.00001))
+                        : ((string) ($before ?? '') === (string) ($value ?? ''));
+                    if (! $same) {
+                        $fields[$field] = ['before' => $before, 'after' => $value];
+                    }
+                }
+            }
+            $changed = ! $old || $fields !== [];
+            if ($old && $changed) {
+                DB::table('performance_plan_items')->where('id', $old->id)->update([...$attributes, 'updated_at' => now(), 'changed_at' => now()]);
+                $id = (int) $old->id;
+            } elseif ($old) {
+                $id = (int) $old->id;
+            } else {
+                $id = DB::table('performance_plan_items')->insertGetId([
+                    ...$attributes, 'plan_id' => $planId, 'code' => $item['code'],
+                    'created_at' => now(), 'updated_at' => now(), 'changed_at' => now(),
+                ]);
+            }
+            if ($changed) {
+                $changes[] = ['type' => $old && $old->is_active ? 'updated' : 'added', 'code' => $item['code'], 'title' => $item['title'], 'fields' => $fields];
+            }
+            $seen[] = $item['code'];
+
+            return $id;
+        };
+        foreach ($document['kpas'] as $i => $kpa) {
+            $kpaId = $write($kpa, 'kpa', $kpa['department_id'], null, $i);
+            foreach ($kpa['kpis'] as $j => $kpi) {
+                $kpiId = $write($kpi, 'kpi', $kpa['department_id'], $kpaId, $j);
+                foreach ($kpi['activities'] as $k => $activity) {
+                    $write($activity, 'activity', $kpa['department_id'], $kpiId, $k);
+                }
+            }
+        }
+        foreach ($existing as $old) {
+            if ($old->is_active && ! in_array($old->code, $seen, true)) {
+                DB::table('performance_plan_items')->where('id', $old->id)->update(['is_active' => false, 'changed_at' => now(), 'updated_at' => now()]);
+                $changes[] = ['type' => 'removed', 'code' => $old->code, 'title' => $old->title, 'fields' => []];
+            }
+        }
+
+        return $changes;
+    }
+
+    private function document(stdClass $plan, bool $published = false): array
+    {
+        if ($published) {
+            $snapshot = DB::table('performance_plan_versions')->where('plan_id', $plan->id)->where('version', $plan->published_revision)->value('snapshot');
+            abort_unless($snapshot, 404);
+
+            return json_decode($snapshot, true);
+        }
+        $items = DB::table('performance_plan_items')->where('plan_id', $plan->id)->where('is_active', true)->orderBy('display_order')->get();
+        $convert = fn (stdClass $item): array => [
+            'code' => $item->code, 'title' => $item->title, 'department_id' => (int) $item->department_id,
+            'category' => $item->category, 'weight' => $item->weight === null ? null : (float) $item->weight,
+            'target_value' => $item->target_value === null ? null : (float) $item->target_value,
+            'target_unit' => $item->target_unit, 'frequency' => $item->frequency, 'direction' => $item->direction,
+            'due_date' => $item->due_date ? substr((string) $item->due_date, 0, 10) : null, 'notes' => $item->notes,
+            'changed_at' => $item->changed_at,
+        ];
+        $kpas = [];
+        foreach ($items->where('kind', 'kpa') as $kpa) {
+            $kpis = [];
+            foreach ($items->where('kind', 'kpi')->where('parent_id', $kpa->id) as $kpi) {
+                $kpis[] = [...$convert($kpi), 'activities' => $items->where('kind', 'activity')->where('parent_id', $kpi->id)->map($convert)->values()->all()];
+            }
+            $kpas[] = [...$convert($kpa), 'kpis' => $kpis];
+        }
+
+        return [
+            'id' => (int) $plan->id, 'code' => $plan->code, 'title' => $plan->title, 'owner_id' => (int) $plan->owner_id,
+            'year' => (int) $plan->year, 'status' => $plan->status, 'revision' => (int) $plan->revision,
+            'published_at' => $plan->published_at, 'kpas' => $kpas,
+        ];
+    }
+
+    private function summary(stdClass $plan, array $document, bool $editor): array
+    {
+        $kpis = collect($document['kpas'])->flatMap(fn ($kpa) => $kpa['kpis']);
+
+        return [
+            'id' => (int) $plan->id, 'code' => $plan->code, 'title' => $document['title'], 'year' => (int) $plan->year,
+            'owner_id' => (int) $plan->owner_id, 'status' => $editor ? $plan->status : 'published',
+            'revision' => $document['revision'], 'published_revision' => $plan->published_revision,
+            'updated_at' => $editor ? $plan->updated_at : $plan->published_at,
+            'kpa_count' => count($document['kpas']), 'kpi_count' => $kpis->count(),
+            'activity_count' => $kpis->sum(fn ($kpi) => count($kpi['activities'])),
+            'weight_total' => array_sum(array_column($document['kpas'], 'weight')),
+        ];
+    }
+
+    private function recordVersion(Request $request, int $id, string $event, array $changes): void
+    {
+        $record = DB::table('performance_plans')->find($id);
+        DB::table('performance_plan_versions')->insert([
+            'plan_id' => $id, 'actor_id' => $request->user()->id, 'version' => $record->revision,
+            'event' => $event, 'snapshot' => json_encode($this->document($record)),
+            'changes' => json_encode($changes), 'created_at' => now(),
+        ]);
+        DB::table('admin_activity')->insert([
+            'actor_id' => $request->user()->id, 'action' => 'plan.'.$event, 'subject' => $record->code.' — '.$record->title,
+            'after_data' => json_encode(['plan_id' => $id, 'revision' => $record->revision, 'changes' => $changes]), 'created_at' => now(),
+        ]);
+    }
+}
