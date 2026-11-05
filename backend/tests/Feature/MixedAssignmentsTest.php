@@ -96,6 +96,55 @@ class MixedAssignmentsTest extends TestCase
         $this->assertSame('Direct HOF work', $this->allocation($this->employee)['entries'][0]['kind']);
     }
 
+    public function test_tv_display_uses_published_work_and_omits_personal_and_evidence_details(): void
+    {
+        $this->assignActivity('ACT-A', $this->employee);
+        $this->actingAs($this->hof)->getJson('/api/display/workspace?year=2026')->assertOk()->assertJsonCount(2, 'activities')->assertJsonPath('activities.0.assigned', true)->assertJsonPath('activities.0.approved', 0)->assertJsonMissingPath('activities.0.owner_name')->assertJsonMissingPath('activities.0.assignee')->assertJsonMissingPath('activities.0.tasks');
+        $this->getJson('/api/display/workspace?year=2025')->assertJsonCount(0, 'activities');
+        $other = $this->user('EMP002');
+        $this->actingAs($other)->getJson('/api/display/workspace?year=2026')->assertOk()->assertJsonCount(0, 'activities');
+        $md = User::factory()->create(['system_role' => 'md', 'is_active' => true]);
+        $this->actingAs($md)->getJson('/api/display/workspace?year=2026')->assertOk()->assertJsonCount(2, 'activities');
+    }
+
+    public function test_tv_employee_counts_follow_current_approved_tasks_and_department_scope(): void
+    {
+        $assignment = $this->assignActivity('ACT-A', $this->employee);
+        $task = DB::table('delivery_tasks')->where('assignment_id', $assignment)->first();
+        $this->actingAs($this->employee)->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => 1, 'evidence' => 'Completed network delivery.'])->assertOk();
+        $submission = DB::table('task_submissions')->where('task_id', $task->id)->value('id');
+        $department = DB::table('departments')->where('code', 'IT')->value('id');
+        $response = $this->actingAs($this->hof)->getJson('/api/display/workspace?year=2026&department='.$department)->assertOk();
+        $member = collect($response->json('team'))->firstWhere('id', $this->employee->id);
+        $this->assertSame(1, $member['assigned_tasks']);
+        $this->assertSame(1, $member['pending_tasks']);
+        $this->assertSame(0, $member['approved_tasks']);
+        $this->assertArrayNotHasKey('email', $member);
+        $this->assertTrue(collect($response->json('team'))->contains('id', $this->manager->id));
+        $this->assertFalse(collect($response->json('team'))->contains('id', $this->user('EMP009')->id));
+        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $response = $this->getJson('/api/display/workspace?year=2026&department='.$department)->assertOk();
+        $member = collect($response->json('team'))->firstWhere('id', $this->employee->id);
+        $this->assertSame(1, $member['approved_tasks']);
+        $this->assertSame(0, $member['pending_tasks']);
+        $response = $this->getJson('/api/display/workspace?year=2025&department='.$department)->assertOk();
+        $this->assertSame(0, collect($response->json('team'))->firstWhere('id', $this->employee->id)['assigned_tasks']);
+    }
+
+    public function test_full_kpi_sends_one_notification_and_md_overdue_link_retains_plan_year(): void
+    {
+        $this->postJson('/api/hof/kpi-assignments', [...$this->kpiPayload($this->manager), 'due_date' => '2026-12-01'])->assertOk();
+        $this->assertEquals(1, DB::table('work_notifications')->where('user_id', $this->manager->id)->count());
+        $this->actingAs($this->manager)->getJson('/api/notifications')->assertJsonPath('items.0.target.page', 'kpis');
+        $this->actingAs($this->hof)->postJson('/api/hof/kpi-assignments', [...$this->kpiPayload($this->manager, 1), 'due_date' => '2026-12-01'])->assertOk();
+        $this->assertEquals(1, DB::table('work_notifications')->where('user_id', $this->manager->id)->count());
+        $this->travelTo(now()->setDate(2027, 1, 5)->startOfDay());
+        $md = User::factory()->create(['system_role' => 'md', 'is_active' => true]);
+        $this->actingAs($md)->getJson('/api/notifications')->assertOk()->assertJsonPath('items.0.type', 'overdue')->assertJsonPath('items.0.target.year', 2026)->assertJsonPath('items.0.target.workspace', 'md');
+        $this->postJson('/api/notifications/read-all')->assertOk();
+        $this->getJson('/api/notifications')->assertJsonPath('unread', 0);
+    }
+
     public function test_complete_kpi_manager_employee_review_workflow_preserves_hof_and_personal_weights(): void
     {
         $this->actingAs($this->editor);

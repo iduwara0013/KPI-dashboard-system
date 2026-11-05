@@ -1,0 +1,132 @@
+.monthly-kpi {
+  min-height: 100vh;
+  padding-bottom: 48px;
+}
+
+.monthly-kpi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px clamp(16px, 3vw, 48px);
+  background: #fff;
+  border-bottom: 2px solid #c5120c;
+}
+
+.monthly-kpi-header > div,
+.monthly-kpi-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.monthly-kpi-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.monthly-kpi-toolbar .field {
+  min-width: 168px;
+  margin: 0;
+}
+
+.monthly-kpi-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.monthly-kpi-summary .panel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+}
+
+.monthly-kpi-summary svg {
+  color: #b51610;
+}
+
+.monthly-kpi-summary strong {
+  display: block;
+  font-size: 24px;
+}
+
+.monthly-kpi-summary small,
+.monthly-kpi-table small,
+.monthly-kpi-submission small {
+  display: block;
+  color: #596a82;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.monthly-kpi-table {
+  min-width: 850px;
+}
+
+.monthly-kpi-table td {
+  font-size: 13px;
+}
+
+.monthly-kpi .badge-blue { background: #e9f2ff; color: #234d88; }
+.monthly-kpi .badge-amber { background: #fff1da; color: #754700; }
+.monthly-kpi .badge-green { background: #e1f4ea; color: #21623e; }
+.kpi-gap-positive { color: #21623e; }
+.kpi-gap-negative { color: #9e281f; }
+
+.monthly-kpi-notice,
+.monthly-kpi-note {
+  background: #edf2f8;
+  border-radius: 8px;
+  color: #294663;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.monthly-kpi-history {
+  display: grid;
+  gap: 12px;
+}
+
+.monthly-kpi-submission {
+  border: 1px solid #dce4ed;
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-wrap: anywhere;
+}
+
+.monthly-kpi-submission > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.monthly-kpi-submission p,
+.monthly-kpi-submission a {
+  display: block;
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
+.monthly-kpi-submission a {
+  color: #244b7a;
+  text-decoration: underline;
+}
+
+.monthly-kpi-submission + .field {
+  margin-top: 16px;
+}
+
+@media (max-width: 600px) {
+  .monthly-kpi-header .brand-copy small,
+  .monthly-kpi-header .avatar { display: none; }
+  .monthly-kpi-toolbar .field { min-width: 140px; flex: 1; }
+}

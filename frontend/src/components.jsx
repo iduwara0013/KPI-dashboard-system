@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Users, X } from 'lucide-react';
+import { BarChart3, Users, X } from 'lucide-react';
 
 const initials = (name = '') => name.split(' ').filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
 
@@ -8,6 +8,18 @@ export function Avatar({ name, index = 0, small = false }) {
 }
 export function Brand() {
   return <><img className="brand-logo" src="/cpstl-logo.png" alt="CPSTL logo" width="58" height="58" /><span className="brand-copy"><strong>CPSTL</strong><small>Performance Management</small></span></>;
+}
+export function MonthlyKpiLink({ onNavigate }) {
+  return <RouteLink className="nav-item" href="/kpi-results" onNavigate={onNavigate}><BarChart3 size={19} /><span>Monthly KPI Results</span></RouteLink>;
+}
+export function RouteLink({ href, onNavigate, ...props }) {
+  function follow(event) {
+    if (!onNavigate || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    onNavigate();
+  }
+
+  return <a {...props} href={href} onClick={follow} />;
 }
 export function Badge({ children, tone = 'neutral' }) { return <span className={`badge badge-${tone}`}>{children}</span>; }
 export function Empty({ icon: Icon = Users, title, text, action }) {

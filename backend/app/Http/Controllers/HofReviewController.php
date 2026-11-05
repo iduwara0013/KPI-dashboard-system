@@ -51,6 +51,7 @@ class HofReviewController extends Controller
             DB::table('delivery_tasks')->insert(['assignment_id' => $assignment, 'generation' => $record->delivery_generation, 'manager_id' => $record->owner_id, 'assignee_id' => $record->owner_id, 'reviewer_id' => $data['reviewer_id'], 'title' => mb_substr($activity['activity'], 0, 500), 'weight' => 1, 'due_date' => $record->due_date, 'instructions' => $record->instructions, 'created_at' => now(), 'updated_at' => now()]);
             DB::table('work_assignments')->where('id', $assignment)->update(['reported_progress' => 0, 'confirmed_progress' => 0, 'version' => $record->version + 1, 'updated_at' => now()]);
             DB::table('admin_activity')->insert(['actor_id' => $request->user()->id, 'action' => 'hof.reviewer_assigned', 'subject' => $record->activity_code, 'after_data' => json_encode($data), 'created_at' => now()]);
+            NotificationController::send((int) $record->owner_id, 'hof-reviewer:'.$assignment.':'.$record->version, 'assignment', 'Your own work is ready for submission to its designated reviewer: '.$activity['activity'], ['workspace' => 'delivery', 'page' => 'tasks', 'search' => $activity['activity']]);
         });
 
         return response()->json(['message' => 'Reviewer assigned. Previous review history is retained; a new submission is required.']);

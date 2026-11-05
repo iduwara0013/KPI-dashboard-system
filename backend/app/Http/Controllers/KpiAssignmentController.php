@@ -94,6 +94,9 @@ class KpiAssignmentController extends Controller
                 $id = DB::table('kpi_delegations')->insertGetId([...$attributes, 'plan_id' => $plan->id, 'kpi_code' => $data['kpi_code'], 'created_at' => now()]);
             }
             $delegation = DB::table('kpi_delegations')->find($id);
+            if ((int) $delegation->assignee_id !== $request->user()->id && (! $old || $changed || $old->due_date != $attributes['due_date'] || $old->instructions !== $attributes['instructions'])) {
+                NotificationController::send((int) $delegation->assignee_id, 'kpi-assigned:'.$id.':'.$delegation->version, 'assignment', 'KPI assigned or updated: '.$kpi['kpi_title'], ['workspace' => 'delivery', 'page' => 'kpis', 'search' => $kpi['kpi_title']]);
+            }
             foreach ($kpi['activities'] as $activity) {
                 $assignment = DB::table('work_assignments')->where('plan_id', $plan->id)->where('activity_code', $activity['activity_code'])->first();
                 if ($assignment && $assignment->ownership_mode === 'activity') {

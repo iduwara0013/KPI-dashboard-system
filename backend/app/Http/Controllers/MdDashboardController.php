@@ -13,9 +13,21 @@ class MdDashboardController extends Controller
         abort_unless($request->user()?->is_active && $request->user()->system_role === 'md', 403, 'An active MD account is required.');
         $data = $request->validate(['year' => ['nullable', 'integer', 'between:2000,2100']]);
         $year = (int) ($data['year'] ?? now()->year);
+        $rows = $this->activities($year);
+
+        return response()->json([
+            'year' => $year, 'as_of' => now()->toIso8601String(), 'activities' => $rows,
+            'years' => DB::table('performance_plans')->whereNotNull('published_revision')->distinct()->orderByDesc('year')->pluck('year'),
+            'departments' => DB::table('departments')->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']),
+            'hofs' => DB::table('department_memberships as m')->join('users as u', 'u.id', '=', 'm.user_id')->join('departments as d', 'd.id', '=', 'm.department_id')->where('m.responsibility', 'hof')->where('u.is_active', true)->where('u.system_role', 'member')->where('d.is_active', true)->select('u.id', 'u.name', 'u.designation', 'm.department_id')->orderBy('u.name')->get(),
+        ]);
+    }
+
+    public function activities(int $year, ?int $owner = null): array
+    {
         $people = DB::table('users')->get(['id', 'name', 'designation'])->keyBy('id');
         $rows = [];
-        foreach (DB::table('performance_plans')->where('year', $year)->whereNotNull('published_revision')->get() as $plan) {
+        foreach (DB::table('performance_plans')->where('year', $year)->when($owner, fn ($query) => $query->where('owner_id', $owner))->whereNotNull('published_revision')->get() as $plan) {
             foreach (app(KpiAssignmentController::class)->rowsForPlan($plan) as $row) {
                 $assignment = $row['assignment'];
                 $valid = $assignment && app(DeliveryController::class)->context($assignment)['valid'];
@@ -38,11 +50,6 @@ class MdDashboardController extends Controller
             }
         }
 
-        return response()->json([
-            'year' => $year, 'as_of' => now()->toIso8601String(), 'activities' => $rows,
-            'years' => DB::table('performance_plans')->whereNotNull('published_revision')->distinct()->orderByDesc('year')->pluck('year'),
-            'departments' => DB::table('departments')->where('is_active', true)->orderBy('name')->get(['id', 'name', 'code']),
-            'hofs' => DB::table('department_memberships as m')->join('users as u', 'u.id', '=', 'm.user_id')->join('departments as d', 'd.id', '=', 'm.department_id')->where('m.responsibility', 'hof')->where('u.is_active', true)->where('u.system_role', 'member')->where('d.is_active', true)->select('u.id', 'u.name', 'u.designation', 'm.department_id')->orderBy('u.name')->get(),
-        ]);
+        return $rows;
     }
 }

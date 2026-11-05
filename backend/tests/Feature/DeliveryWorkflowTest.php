@@ -138,6 +138,60 @@ class DeliveryWorkflowTest extends TestCase
         $this->actingAs($this->employee)->putJson('/api/delivery/tasks/'.$task.'/progress', ['version' => 3, 'reported_progress' => 20, 'progress_note' => 'Cannot edit approved work'])->assertConflict();
     }
 
+    public function test_notifications_cover_assignment_submission_resubmission_and_approval_without_failed_writes(): void
+    {
+        $this->actingAs($this->manager)->getJson('/api/notifications')->assertJsonPath('items.0.type', 'assignment');
+        $before = DB::table('work_notifications')->count();
+        $invalid = $this->breakdownPayload();
+        $invalid['tasks'][1]['assignee_id'] = $this->user('EMP009')->id;
+        $this->putJson('/api/delivery/assignments/'.$this->assignment.'/tasks', $invalid)->assertUnprocessable();
+        $this->assertDatabaseCount('work_notifications', $before);
+        [$task] = $this->allocate();
+        $this->actingAs($this->employee)->getJson('/api/notifications')->assertJsonPath('items.0.type', 'assignment')->assertJsonPath('items.0.target.page', 'tasks');
+        $submission = $this->submitTask($this->employee, $task);
+        $this->actingAs($this->manager)->getJson('/api/notifications')->assertJsonPath('items.0.type', 'submission')->assertJsonPath('items.0.target.page', 'reviews');
+        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'needs_changes', 'review_note' => 'Add validation.'])->assertOk();
+        $this->actingAs($this->employee)->getJson('/api/notifications')->assertJsonPath('items.0.type', 'needs_changes');
+        $submission = $this->submitTask($this->employee, $task, 3);
+        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 4, 'decision' => 'approved'])->assertOk();
+        $this->actingAs($this->employee)->getJson('/api/notifications')->assertJsonPath('items.0.type', 'approved');
+        $count = DB::table('work_notifications')->count();
+        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 5, 'decision' => 'approved'])->assertConflict();
+        $this->assertDatabaseCount('work_notifications', $count);
+    }
+
+    public function test_overdue_reminders_deduplicate_per_day_and_ignore_approved_and_retired_work(): void
+    {
+        $this->travelTo(now()->setDate(2026, 12, 3)->startOfDay());
+        [$task] = $this->allocate();
+        $this->actingAs($this->employee)->getJson('/api/notifications')->assertJsonPath('items.0.type', 'overdue');
+        $count = DB::table('work_notifications')->where('type', 'overdue')->count();
+        $id = DB::table('work_notifications')->where('type', 'overdue')->value('id');
+        $this->postJson('/api/notifications/'.$id.'/read')->assertOk();
+        $this->getJson('/api/notifications')->assertJsonPath('items.0.read_at', DB::table('work_notifications')->where('id', $id)->value('read_at'));
+        $this->assertDatabaseCount('work_notifications', 3 + $count);
+        $this->travel(1)->days();
+        $this->getJson('/api/notifications')->assertOk();
+        $this->assertEquals($count + 1, DB::table('work_notifications')->where('type', 'overdue')->count());
+        $submission = $this->submitTask($this->employee, $task);
+        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $count = DB::table('work_notifications')->where('type', 'overdue')->count();
+        $this->travel(1)->days();
+        $this->actingAs($this->employee)->getJson('/api/notifications')->assertOk();
+        $this->assertEquals($count, DB::table('work_notifications')->where('type', 'overdue')->count());
+        $this->artisan('notifications:overdue')->assertSuccessful();
+    }
+
+    public function test_retired_tasks_do_not_send_overdue_reminders_to_previous_owner(): void
+    {
+        $this->allocate();
+        $version = DB::table('work_assignments')->where('id', $this->assignment)->value('version');
+        $this->actingAs($this->hof)->postJson('/api/hof/assignments', ['plan_id' => $this->plan, 'activity_code' => 'ACT-SPEC', 'source_revision' => 2, 'version' => $version, 'assignee_id' => $this->hof->id])->assertOk();
+        $this->travelTo(now()->setDate(2026, 12, 5)->startOfDay());
+        $this->actingAs($this->employee)->getJson('/api/notifications')->assertOk();
+        $this->assertEquals(0, DB::table('work_notifications')->where('user_id', $this->employee->id)->where('type', 'overdue')->count());
+    }
+
     public function test_changes_require_comments_and_resubmission_retains_history(): void
     {
         [$task] = $this->allocate();

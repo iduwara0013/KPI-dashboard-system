@@ -12,6 +12,7 @@ export default function PersonalAllocationWorkspace({ session, onBack }) {
   const [error, setError] = useState(null), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [message, setMessage] = useState('');
   const [publish, setPublish] = useState(false), [reviewNote, setReviewNote] = useState(''), [history, setHistory] = useState(false), [pending, setPending] = useState(null);
   const loadTicket = useRef(0);
+  const leaving = useRef(false);
   const dirty = detail && JSON.stringify(entries.map(row => row.weight)) !== JSON.stringify(detail.entries.map(row => row.weight));
   const total = entries.reduce((sum, row) => sum + Number(row.weight || 0), 0);
   const currentSelection = detail && same(detail.owner_id, owner) && Number(detail.year) === Number(year);
@@ -26,7 +27,7 @@ export default function PersonalAllocationWorkspace({ session, onBack }) {
   }
   useEffect(() => { request('/allocations/workspace').then(result => { setWorkspace(result); if (!owner) { const first = result.plans.find(plan => plan.status !== 'published'); setOwner(String(first?.owner_id || result.people[0]?.id || '')); if (first) setYear(first.year); } setLoading(false); }).catch(err => { setError(err); setLoading(false); }); }, []);
   useEffect(() => { if (owner && Number(year) >= 2000 && Number(year) <= 2100) load(); else { loadTicket.current++; setDetail(null); setEntries([]); setLoading(false); } }, [owner, year]);
-  useEffect(() => { const guard = e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } }; window.addEventListener('beforeunload', guard); return () => window.removeEventListener('beforeunload', guard); }, [dirty]);
+  useEffect(() => { const guard = e => { if (dirty && !leaving.current) { e.preventDefault(); e.returnValue = ''; } }; window.addEventListener('beforeunload', guard); return () => window.removeEventListener('beforeunload', guard); }, [dirty]);
   function navigate(action) { if (dirty) setPending(() => action); else action(); }
   async function save(e) {
     e.preventDefault(); setBusy(true); setError(null); setMessage('');
@@ -38,7 +39,7 @@ export default function PersonalAllocationWorkspace({ session, onBack }) {
     try { await request(`/allocations/${detail.id}/publish`, { method: 'POST', body: { version: detail.version, review_note: reviewNote || null } }); setPublish(false); await load(); setWorkspace(await request('/allocations/workspace')); setMessage('The 100% personal allocation is approved and published.'); }
     catch (err) { setPublish(false); setError(err); } finally { setBusy(false); }
   }
-  return <div className="allocation-workspace"><header className="allocation-header"><a className="brand" href="#allocation" onClick={e => e.preventDefault()}><Brand /></a><button className="btn btn-secondary" onClick={() => navigate(onBack)}><ArrowLeft size={16} />Back to workspace</button></header><main>
+  return <div className="allocation-workspace"><header className="allocation-header"><a className="brand" href="#allocation" onClick={e => e.preventDefault()}><Brand /></a><button className="btn btn-secondary" onClick={() => navigate(() => { leaving.current = true; onBack(); })}><ArrowLeft size={16} />Back to workspace</button></header><main>
     <div className="page-heading"><div><div className="eyebrow">INDIVIDUAL PERFORMANCE ALLOCATION</div><h1>{workspace?.can_publish ? 'Balance every person’s full 100%.' : 'My personal allocation'}</h1><p>Personal weights cover all assigned responsibilities across departments. They are separate from contribution weights inside a KPI or activity.</p></div><Badge>{workspace?.can_publish ? 'Plan Editor review' : 'Propose → review → publish'}</Badge></div>
     {error && <div className="load-error"><ErrorBox error={error} /><button className="btn btn-secondary" disabled={busy} onClick={load}>Reload allocation</button></div>}{message && <div className="allocation-success" role="status"><CheckCircle2 size={18} />{message}</div>}
     {workspace && <div className="allocation-filters"><label>Person<select aria-label="Allocation person" disabled={busy} value={owner} onChange={e => { const value = e.target.value; navigate(() => { setMessage(''); setOwner(value); }); }}><option value="">Choose a person</option>{workspace.people.map(person => <option key={person.id} value={person.id}>{person.name} · {person.employee_number}</option>)}</select></label><label>Performance year<input aria-label="Allocation year" type="number" min="2000" max="2100" value={year} disabled={busy} onChange={e => { const value = e.target.value; navigate(() => { setMessage(''); setYear(value); }); }} /></label>{detail && <button className="text-button" onClick={() => setHistory(true)}><History size={15} />Version history ({detail.history.length})</button>}</div>}

@@ -183,6 +183,9 @@ class DeliveryController extends Controller
                     $id = DB::table('delivery_tasks')->insertGetId([...$attributes, 'assignment_id' => $parent->id, 'generation' => $parent->delivery_generation, 'manager_id' => $request->user()->id, 'created_at' => now()]);
                 }
                 $seen[] = $id;
+                if ((int) $task['assignee_id'] !== $request->user()->id && (! isset($task['id']) || (int) $existing[$id]->assignee_id !== (int) $task['assignee_id'] || $existing[$id]->title !== $task['title'] || $existing[$id]->due_date != ($task['due_date'] ?? null))) {
+                    NotificationController::send((int) $task['assignee_id'], 'task-assigned:'.$id.':'.($existing[$id]->version ?? 0), 'assignment', 'Task assigned or updated: '.$task['title'], ['workspace' => 'delivery', 'page' => 'tasks', 'search' => $task['title']]);
+                }
             }
             DB::table('delivery_tasks')->where('assignment_id', $parent->id)->where('generation', $parent->delivery_generation)->whereNotIn('id', $seen)->update(['is_active' => false, 'updated_at' => now()]);
             $this->rollup($parent);
@@ -233,6 +236,7 @@ class DeliveryController extends Controller
             DB::table('delivery_tasks')->where('id', $task)->update(['status' => 'submitted', 'reported_progress' => 100, 'version' => $record->version + 1, 'updated_at' => now()]);
             $this->rollup($assignment);
             $this->audit($request, 'task.submitted', 'Task '.$task, ['evidence' => $data['evidence'], 'evidence_url' => $data['evidence_url'] ?? null]);
+            NotificationController::send((int) $record->reviewer_id, 'submitted:'.$task.':'.$record->version, 'submission', 'Work awaits your review: '.$record->title, ['workspace' => 'delivery', 'page' => 'reviews', 'search' => $record->title]);
         });
 
         return response()->json(['message' => 'Work submitted for review.']);
@@ -252,6 +256,7 @@ class DeliveryController extends Controller
             DB::table('delivery_tasks')->where('id', $task->id)->update(['status' => $data['decision'], 'version' => $task->version + 1, 'updated_at' => now()]);
             $this->rollup($assignment);
             $this->audit($request, 'task.reviewed', 'Task '.$task->id, ['submission_id' => $submission, ...$data]);
+            NotificationController::send((int) $task->assignee_id, 'reviewed:'.$submission, $data['decision'], ($data['decision'] === 'approved' ? 'Work approved: ' : 'Changes requested: ').$task->title, ['workspace' => 'delivery', 'page' => 'tasks', 'search' => $task->title]);
         });
 
         return response()->json(['message' => 'Review decision saved.']);

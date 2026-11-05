@@ -242,6 +242,9 @@ class HofWorkController extends Controller
             $id = DB::table('work_assignments')->insertGetId([...$attributes, 'plan_id' => $plan->id, 'activity_code' => $activity['activity_code'], 'created_at' => now()]);
         }
         $record = DB::table('work_assignments')->find($id);
+        if (! $inherit && $assignee !== (int) $request->user()->id && ($reset || $existing->due_date != $attributes['due_date'] || $existing->instructions !== $attributes['instructions'])) {
+            NotificationController::send($assignee, 'assignment:'.$id.':'.$record->version, 'assignment', 'Activity assigned or updated: '.$activity['activity'], ['workspace' => 'delivery', 'page' => $role === 'employee' ? 'tasks' : 'activities', 'search' => $activity['activity']]);
+        }
         if ($role === 'employee' && ($reset || ! DB::table('delivery_tasks')->where('assignment_id', $id)->where('generation', $record->delivery_generation)->where('is_active', true)->exists())) {
             DB::table('delivery_tasks')->insert([
                 'assignment_id' => $id, 'generation' => $record->delivery_generation, 'manager_id' => $plan->owner_id,

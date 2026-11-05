@@ -6,9 +6,13 @@ use App\Http\Controllers\HofReviewController;
 use App\Http\Controllers\HofWorkController;
 use App\Http\Controllers\KpiAssignmentController;
 use App\Http\Controllers\MdDashboardController;
+use App\Http\Controllers\MonthlyKpiResultController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\OrganizationChartController;
 use App\Http\Controllers\PerformancePlanController;
 use App\Http\Controllers\PersonalAllocationController;
 use App\Http\Controllers\SessionController;
+use App\Http\Controllers\TvDisplayController;
 use App\Http\Middleware\EnforceExecutiveReadOnly;
 use App\Http\Middleware\EnsureWorkspaceIdentity;
 use App\Http\Middleware\RequireDeliveryAccess;
@@ -22,7 +26,20 @@ Route::get('/', function () {
 
 Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecutiveReadOnly::class])->group(function () {
     Route::get('/session', [SessionController::class, 'show']);
+    Route::get('/organization-chart', [OrganizationChartController::class, 'show'])->middleware('auth');
+    Route::get('/display/workspace', [TvDisplayController::class, 'workspace'])->middleware('auth');
+    Route::middleware('auth')->group(function () {
+        Route::get('/notifications', [NotificationController::class, 'index']);
+        Route::post('/notifications/read-all', [NotificationController::class, 'read']);
+        Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])->whereNumber('notification');
+    });
     Route::get('/md/workspace', [MdDashboardController::class, 'workspace'])->middleware('auth');
+    Route::middleware('auth')->prefix('kpi-results')->group(function () {
+        Route::get('/workspace', [MonthlyKpiResultController::class, 'workspace']);
+        Route::post('/submit', [MonthlyKpiResultController::class, 'submit'])->middleware('throttle:30,1');
+        Route::post('/review', [MonthlyKpiResultController::class, 'review'])->middleware('throttle:30,1');
+        Route::post('/reviewer', [MonthlyKpiResultController::class, 'assignReviewer'])->middleware('throttle:30,1');
+    });
     Route::post('/login', [SessionController::class, 'login'])->middleware('throttle:5,1');
     Route::post('/logout', [SessionController::class, 'logout'])->middleware('auth');
     Route::middleware('auth')->prefix('allocations')->group(function () {

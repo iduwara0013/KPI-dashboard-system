@@ -1,3 +1,5 @@
+import DashboardCharts from './DashboardCharts.jsx';
+import OrganizationChart from './OrganizationChart.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Building2, Check,
@@ -6,12 +8,16 @@ import {
   ShieldCheck, SlidersHorizontal, Sparkles, Trash2, UserPlus, Users, X,
 } from 'lucide-react';
 import { bindSessionIdentity, checkSessionIdentity, onAuthenticationRequired, request } from './api.js';
-import { Avatar, Brand, Badge, Empty, ErrorBox, Field, Modal } from './components.jsx';
+import { Avatar, Brand, Badge, Empty, ErrorBox, Field, Modal, RouteLink } from './components.jsx';
 import PlanWorkspace from './PlanWorkspace.jsx';
 import HofWorkspace from './HofWorkspace.jsx';
 import DeliveryWorkspace from './DeliveryWorkspace.jsx';
 import SessionRecovery from './SessionRecovery.jsx';
 import MdWorkspace from './MdWorkspace.jsx';
+import MonthlyKpiWorkspace from './MonthlyKpiWorkspace.jsx';
+import NotificationCenter from './NotificationCenter.jsx';
+import TvDisplay from './TvDisplay.jsx';
+import { defaultDeliveryPage, resolveWorkspace, workspacePath } from './workspaceRoutes.js';
 
 const roles = { super_admin: 'System admin', md: 'MD / executive viewer', plan_editor: 'Plan editor', member: 'Team member' };
 const responsibilities = { hof: 'Head of function', manager: 'Manager', employee: 'Employee' };
@@ -31,41 +37,95 @@ const departmentById = (data, id) => data.departments.find(x => idEquals(x.id, i
 const memberCount = (data, id) => data.memberships.filter(x => idEquals(x.department_id, id) && userById(data, x.user_id)?.is_active).length;
 
 export default function App() {
-  const [memberWorkspace, setMemberWorkspace] = useState('');
+  const [pathname, setPathname] = useState(window.location.pathname);
+  const [historyVisit, setHistoryVisit] = useState(0);
   const [session, setSession] = useState(undefined);
   const [bootError, setBootError] = useState(null);
   const [recovery, setRecovery] = useState(null);
+  const [notificationTarget, setNotificationTarget] = useState(null);
   const sessionRef = useRef(session), recovering = useRef(false);
   sessionRef.current = session;
   const loadSession = () => { setBootError(null); request('/session').then(x => { bindSessionIdentity(x.user); setSession(x.user); }).catch(setBootError); };
   useEffect(loadSession, []);
+  useEffect(() => {
+    function followHistory() {
+      setPathname(window.location.pathname);
+      setNotificationTarget(null);
+      setHistoryVisit(visit => visit + 1);
+    }
+    window.addEventListener('popstate', followHistory);
+    return () => window.removeEventListener('popstate', followHistory);
+  }, []);
   useEffect(() => {
     const unsubscribe = onAuthenticationRequired(event => { if (sessionRef.current) { recovering.current = true; setRecovery(event); } });
     const check = () => { if (sessionRef.current && !recovering.current && document.visibilityState === 'visible') checkSessionIdentity().catch(() => {}); };
     window.addEventListener('focus', check); document.addEventListener('visibilitychange', check);
     return () => { unsubscribe(); window.removeEventListener('focus', check); document.removeEventListener('visibilitychange', check); };
   }, []);
-  function updateSession(user) { if (!user && recovering.current) return; bindSessionIdentity(user); setMemberWorkspace(''); setSession(user); }
+  function navigate(path, replace = false) {
+    if (window.location.pathname === path) return;
+    if (replace) window.history.replaceState(null, '', path);
+    else window.history.pushState(null, '', path);
+    setPathname(path);
+  }
+  function updateSession(user) {
+    if (!user && recovering.current) return;
+    if (!user) navigate('/', true);
+    bindSessionIdentity(user);
+    setNotificationTarget(null);
+    setSession(user);
+  }
+  function openNotification(target) {
+    const next = target.workspace === 'md'
+      ? workspacePath('md', 'work')
+      : workspacePath('delivery', target.page === 'activities' && !session.workspaces?.includes('manager') ? 'tasks' : target.page);
+    if (resolveWorkspace(next, session).error) return;
+    navigate(next);
+    setNotificationTarget({ ...target, token: Date.now() });
+  }
   function restored(user) {
     if (!user || String(user.id) !== String(sessionRef.current.id) || user.system_role !== sessionRef.current.system_role) throw new Error('Account access changed. Sign out and reopen the correct workspace.');
     bindSessionIdentity(user); recovering.current = false; setSession(user); setRecovery(null);
   }
-  function discardSession() { recovering.current = false; setRecovery(null); bindSessionIdentity(null); setMemberWorkspace(''); setSession(null); }
+  function discardSession() { recovering.current = false; setRecovery(null); updateSession(null); }
   if (bootError) return <div className="boot"><img className="brand-logo" src="/cpstl-logo.png" alt="CPSTL logo" width="58" height="58" /><h2>Let’s reconnect your workspace</h2><ErrorBox error={bootError} /><button className="btn btn-primary" onClick={loadSession}>Try again</button></div>;
   if (session === undefined) return <div className="boot"><LoaderCircle className="spin" /><p>Opening your workspace…</p></div>;
   if (!session) return <Login onLogin={updateSession} />;
   let workspace;
-  if (session.system_role === 'md') {
-    workspace = <MdWorkspace session={session} onSession={updateSession} />;
-  } else if (session.system_role === 'plan_editor') {
-    workspace = <PlanWorkspace session={session} onSession={updateSession} />;
-  } else if (session.system_role !== 'super_admin') {
-    const hof = session.workspaces?.includes('hof');
-    workspace = hof && memberWorkspace !== 'delivery' ? <HofWorkspace session={session} onSession={updateSession} onDelivery={() => setMemberWorkspace('delivery')} /> : <DeliveryWorkspace session={session} onSession={updateSession} onHof={hof ? () => setMemberWorkspace('hof') : null} />;
+  const route = resolveWorkspace(pathname, session);
+  const props = {
+    session, onSession: updateSession, page: route.page,
+    onPage: page => {
+      const path = workspacePath(route.workspace, page);
+      if (route.page === 'personal' || page === 'personal') window.location.assign(path);
+      else navigate(path);
+    },
+  };
+  const standalone = ['display', 'kpi-results'].includes(route.workspace);
+  if (route.error) {
+    workspace = <div className="boot">
+      <img className="brand-logo" src="/cpstl-logo.png" alt="CPSTL logo" width="58" height="58" />
+      <h1>{route.error === 'forbidden' ? 'Access unavailable' : 'Page not found'}</h1>
+      <p>{route.error === 'forbidden' ? 'This page is unavailable for your account.' : 'Check the address or return to your workspace.'}</p>
+      <a className="btn btn-primary" href="/">Back to workspace</a>
+    </div>;
+  } else if (route.workspace === 'display') {
+    workspace = <TvDisplay paused={!!recovery} />;
+  } else if (route.workspace === 'kpi-results') {
+    workspace = <MonthlyKpiWorkspace session={session} />;
+  } else if (route.workspace === 'md') {
+    workspace = <MdWorkspace key={historyVisit} {...props} notificationTarget={notificationTarget} />;
+  } else if (route.workspace === 'planning') {
+    workspace = <PlanWorkspace key={historyVisit} {...props} />;
+  } else if (route.workspace === 'hof') {
+    workspace = <HofWorkspace key={historyVisit} {...props} onDelivery={() => { setNotificationTarget(null); navigate(workspacePath('delivery', defaultDeliveryPage(session))); }} />;
+  } else if (route.workspace === 'delivery') {
+    const onHof = session.workspaces?.includes('hof') ? () => { setNotificationTarget(null); navigate('/hof/overview'); } : null;
+    workspace = <DeliveryWorkspace key={historyVisit} {...props} notificationTarget={notificationTarget} onHof={onHof} />;
   } else {
-    workspace = <Workspace session={session} onSession={updateSession} />;
+    workspace = <Workspace key={historyVisit} {...props} />;
   }
-  return <><div inert={recovery ? true : undefined} aria-hidden={recovery ? true : undefined}>{workspace}</div>{recovery && <SessionRecovery user={session} reason={recovery.reason} onRestored={restored} onDiscard={discardSession} />}</>;
+  return <><div inert={recovery ? true : undefined} aria-hidden={recovery ? true : undefined}>{workspace}{!standalone && !route.error && <NotificationCenter key={session.id} user={session} paused={!!recovery} onOpen={openNotification} />}</div>{recovery && <SessionRecovery user={session} reason={recovery.reason} onRestored={restored} onDiscard={discardSession} />}</>;
 }
 
 function Login({ onLogin }) {
@@ -95,11 +155,10 @@ function Login({ onLogin }) {
   </div>;
 }
 
-function Workspace({ session, onSession }) {
+function Workspace({ session, onSession, page, onPage }) {
   const [data, setData] = useState(blankData);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [page, setPage] = useState('overview');
   const [query, setQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -108,7 +167,7 @@ function Workspace({ session, onSession }) {
   const [mobileNav, setMobileNav] = useState(false);
   const searchRef = useRef();
   const notify = message => setToast(message);
-  const navigate = next => { setPage(next); setQuery(''); setDepartmentFilter('all'); setStatusFilter('all'); setMobileNav(false); };
+  const navigate = next => { onPage(next); setQuery(''); setDepartmentFilter('all'); setStatusFilter('all'); setMobileNav(false); };
   async function refresh() {
     setLoadError(null);
     try { const result = await request('/admin/workspace'); setData(result); return result; }
@@ -157,17 +216,17 @@ function Workspace({ session, onSession }) {
   return <div className="app-shell">
     {mobileNav && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
     <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
-      <a className="brand" href="#overview" aria-label="CPSTL administration overview" onClick={e => { e.preventDefault(); navigate('overview'); }}><Brand /></a>
+      <RouteLink className="brand" href="/admin/overview" aria-label="CPSTL administration overview" onNavigate={() => navigate('overview')}><Brand /></RouteLink>
       <div className="workspace-label"><span className="workspace-dot" /> CPSTL WORKSPACE</div>
       <div className="nav-caption">ADMINISTRATION</div>
-      <nav aria-label="Administration">{navigation.map(([id, label, Icon]) => <button key={id} className={`nav-item ${page === id ? 'nav-active' : ''}`} onClick={() => navigate(id)}><Icon size={19} /><span>{label}</span>{id === 'people' && <span className="nav-count">{data.users.length}</span>}</button>)}</nav>
+      <nav aria-label="Administration">{navigation.map(([id, label, Icon]) => <RouteLink key={id} href={workspacePath('admin', id)} aria-current={page === id ? 'page' : undefined} className={`nav-item ${page === id ? 'nav-active' : ''}`} onNavigate={() => navigate(id)}><Icon size={19} /><span>{label}</span>{id === 'people' && <span className="nav-count">{data.users.length}</span>}</RouteLink>)}</nav>
       <div className="sidebar-bottom"><div className="sidebar-tip"><span className="tip-icon"><Network size={22} /></span><strong>A clear structure.<br />A stronger foundation.</strong><p>Connect every person to the right department and responsibility.</p><button onClick={() => setModal({ kind: 'help' })}>Setup guide <ArrowUpRight size={15} /></button></div>
         <div className="sidebar-user"><Avatar name={session.name} small /><span><strong>{session.name}</strong><small>System administrator</small></span><button className="icon-button" title="Sign out" aria-label="Sign out" onClick={logout}><LogOut size={17} /></button></div>
       </div>
     </aside>
     <div className="workspace">
       <header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileNav(true)}><Menu size={22} /></button><span>CPSTL</span><ChevronRight size={14} /><strong>{title}</strong></div>
-        <div className="topbar-right"><div className="global-search"><Search size={17} /><input ref={searchRef} value={query} onChange={e => { setQuery(e.target.value); setPage('people'); }} placeholder="Search people…" aria-label="Search people" /><kbd>⌘ K</kbd></div><button className="icon-button help-button" aria-label="Open setup guide" onClick={() => setModal({ kind: 'help' })}><CircleHelp size={20} /></button><span className="topbar-divider" /><Avatar name={session.name} small /></div>
+        <div className="topbar-right"><div className="global-search"><Search size={17} /><input ref={searchRef} value={query} onChange={e => { setQuery(e.target.value); onPage('people'); }} placeholder="Search people…" aria-label="Search people" /><kbd>⌘ K</kbd></div><button className="icon-button help-button" aria-label="Open setup guide" onClick={() => setModal({ kind: 'help' })}><CircleHelp size={20} /></button><span className="topbar-divider" /><Avatar name={session.name} small /></div>
       </header>
       <main id="main-content">
         <div className="page-heading"><div><div className="eyebrow">ORGANIZATION ADMINISTRATION</div><h1>{page === 'overview' ? 'Your organization, in sync.' : page === 'people' ? 'Good people. Connected teams.' : page === 'departments' ? 'A place for every team.' : page === 'access' ? 'The right access, for everyone.' : 'Every change, accounted for.'}</h1><p>{page === 'overview' ? 'A clear view of your people, departments and responsibilities.' : page === 'people' ? 'Manage accounts, department memberships and reporting relationships.' : page === 'departments' ? 'Build your organization around the teams that make it work.' : page === 'access' ? 'System access and department responsibilities are managed separately.' : 'A record of the organization updates made by administrators.'}</p></div>
@@ -175,7 +234,7 @@ function Workspace({ session, onSession }) {
         </div>
         {loadError && <div className="load-error"><ErrorBox error={loadError} /><button className="btn btn-secondary" onClick={() => refresh().catch(() => {})}>Retry loading</button></div>}
         {loading ? <div className="content-loading"><LoaderCircle className="spin" /><p>Loading your organization…</p></div> : <>
-          {page === 'overview' && <>
+          {page === 'overview' && <><DashboardCharts title="Organization analytics" groupTitle="People by designation" records={data.users.map(u => ({ id: u.id, label: u.name, status: u.is_active ? 'Active' : 'Inactive', group: u.designation || 'Not set' }))} /><details className="reporting-details"><summary>View organization reporting chart</summary><OrganizationChart /></details>
             <section className="stats-grid" aria-label="Organization summary">
               {[['Total people', data.users.length, `${activeUsers.length} active accounts`, Users, 'mint'], ['Departments', activeDepartments.length, 'Active departments', Building2, 'sand'], ['Heads of function', hofIds.size, 'Across your departments', Network, 'lilac'], ['Needs attention', uncovered.length + unassigned.length, 'Organization setup items', ShieldCheck, 'blue']].map(([label, value, caption, Icon, tone]) => <article className="stat" key={label}><div className="stat-top"><span>{label}</span><span className={`stat-icon ${tone}`}><Icon size={19} /></span></div><strong>{value.toString().padStart(2, '0')}</strong><small><span className={`tiny-dot ${tone}`} />{caption}</small></article>)}
             </section>
@@ -298,3 +357,5 @@ function HelpContent({ onClose }) {
     ['04', 'Set reporting relationships', 'Select one or more reporting managers in the same department. Circular reporting and self-reporting are prevented.'],
   ].map(([number, title, text]) => <div className="help-step" key={number}><span>{number}</span><div><h3>{title}</h3><p>{text}</p></div></div>)}<div className="form-note"><FolderTree size={19} /><span>Open Performance plans to create and publish HOF plans. Excel import and delegated work are later milestones.</span></div></div><div className="modal-footer"><button className="btn btn-primary" onClick={onClose}>Got it <Check size={16} /></button></div></>;
 }
+
+

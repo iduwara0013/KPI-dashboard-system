@@ -1,11 +1,15 @@
+import DashboardCharts from './DashboardCharts.jsx';
+import OrganizationChart from './OrganizationChart.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Building2, CheckCircle2, ChevronRight, ClipboardList, FolderTree, LayoutDashboard, LoaderCircle, LogOut, Menu, Network, Pencil, Search, Target, UserCheck, Users, X } from 'lucide-react';
 import { request } from './api.js';
-import { Avatar, Badge, Brand, Empty, ErrorBox, Field, Modal } from './components.jsx';
+import { Avatar, Badge, Brand, Empty, ErrorBox, Field, Modal, MonthlyKpiLink, RouteLink } from './components.jsx';
 import './hof.css';
 import PlanBreakdown from './PlanBreakdown.jsx';
 import MixedAssignmentForm from './MixedAssignmentForm.jsx';
 import PersonalAllocationWorkspace from './PersonalAllocationWorkspace.jsx';
+import WorkFocus from './WorkFocus.jsx';
+import { defaultDeliveryPage, workspacePath } from './workspaceRoutes.js';
 
 const same = (a, b) => String(a) === String(b);
 const percent = value => `${Number((Number(value) * 100).toFixed(2))}%`;
@@ -13,9 +17,9 @@ const blank = { activities: [], managers: [], employees: [], kpis: [], team: [],
 const pages = [['overview', 'Overview', LayoutDashboard], ['breakdown', 'Plan breakdown', FolderTree], ['activities', 'Assign KPI / activity', ClipboardList], ['own', 'My work', UserCheck], ['delegated', 'Delegated work', Network], ['team', 'Team progress', Users], ['personal', 'Personal allocation', Target]];
 const labelFor = row => !row.assignment ? 'Unassigned' : row.source_changed ? 'Plan changed' : !row.assignee_eligible ? 'Reassign needed' : Number(row.assignment.confirmed_progress) > 0 ? `${Number(row.assignment.confirmed_progress)}% approved` : Number(row.assignment.reported_progress) === 100 ? 'Reported 100%' : Number(row.assignment.reported_progress) > 0 ? 'In progress' : 'Assigned';
 
-export default function HofWorkspace({ session, onSession, onDelivery }) {
+export default function HofWorkspace({ session, onSession, page, onPage, onDelivery }) {
   const [data, setData] = useState(blank), [loading, setLoading] = useState(true), [error, setError] = useState(null);
-  const [page, setPage] = useState('overview'), [mobile, setMobile] = useState(false), [modal, setModal] = useState(null);
+  const [mobile, setMobile] = useState(false), [modal, setModal] = useState(null);
   const [query, setQuery] = useState(''), [year, setYear] = useState(''), [department, setDepartment] = useState('all'), [toast, setToast] = useState('');
   async function refresh() {
     try {
@@ -26,7 +30,7 @@ export default function HofWorkspace({ session, onSession, onDelivery }) {
   }
   useEffect(() => { refresh(); }, []);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 5000); return () => clearTimeout(timer); }, [toast]);
-  function navigate(next) { setPage(next); setQuery(''); setMobile(false); }
+  function navigate(next) { onPage(next); setQuery(''); setMobile(false); }
   async function logout() { try { await request('/logout', { method: 'POST' }); onSession(null); } catch (err) { setError(err); } }
   async function saved(message) { setModal(null); await refresh(); setToast(message); }
   const years = [...new Set([...data.activities.map(row => String(row.year)), year].filter(Boolean))].sort().reverse();
@@ -48,10 +52,10 @@ export default function HofWorkspace({ session, onSession, onDelivery }) {
   return <div className="app-shell planning-shell hof-shell">
     {mobile && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <aside className={`sidebar ${mobile ? 'sidebar-open' : ''}`}>
-      <a className="brand" href="#work" onClick={e => { e.preventDefault(); navigate('overview'); }}><Brand /></a>
+      <RouteLink className="brand" href="/hof/overview" onNavigate={() => navigate('overview')}><Brand /></RouteLink>
       <div className="workspace-label"><span className="workspace-dot" /> PERFORMANCE WORKSPACE</div><div className="nav-caption">HEAD OF FUNCTION</div>
-      <nav aria-label="HOF workspace">{pages.map(([key, label, Icon]) => <button className={`nav-item ${page === key ? 'nav-active' : ''}`} key={key} onClick={() => navigate(key)}><Icon size={19} /><span>{label}</span>{key === 'activities' && unassigned.length > 0 && <span className="nav-count">{unassigned.length}</span>}</button>)}{onDelivery && <button className="nav-item" onClick={onDelivery}><CheckCircle2 size={19} /><span>Task reviews & delivery</span></button>}</nav>
-      <div className="sidebar-bottom"><div className="sidebar-tip"><span className="tip-icon"><Network size={23} /></span><strong>Clear ownership.<br />Connected delivery.</strong><p>Keep your own work visible and give each manager a clear responsibility.</p></div><div className="sidebar-user"><Avatar name={session.name} small /><span><strong>{session.name}</strong><small>Head of function</small></span><button className="icon-button" aria-label="Sign out" onClick={logout}><LogOut size={17} /></button></div></div>
+      <nav aria-label="HOF workspace">{pages.map(([key, label, Icon]) => <RouteLink href={workspacePath('hof', key)} aria-current={page === key ? 'page' : undefined} className={`nav-item ${page === key ? 'nav-active' : ''}`} key={key} onNavigate={() => navigate(key)}><Icon size={19} /><span>{label}</span>{key === 'activities' && unassigned.length > 0 && <span className="nav-count">{unassigned.length}</span>}</RouteLink>)}{onDelivery && <RouteLink className="nav-item" href={workspacePath('delivery', defaultDeliveryPage(session))} onNavigate={onDelivery}><CheckCircle2 size={19} /><span>Task reviews & delivery</span></RouteLink>}<MonthlyKpiLink /></nav>
+      <a className="nav-item" href="/display" target="_blank" rel="noopener noreferrer"><span>TV display ↗</span></a><div className="sidebar-bottom"><div className="sidebar-tip"><span className="tip-icon"><Network size={23} /></span><strong>Clear ownership.<br />Connected delivery.</strong><p>Keep your own work visible and give each manager a clear responsibility.</p></div><div className="sidebar-user"><Avatar name={session.name} small /><span><strong>{session.name}</strong><small>Head of function</small></span><button className="icon-button" aria-label="Sign out" onClick={logout}><LogOut size={17} /></button></div></div>
     </aside>
     <div className="workspace"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobile(true)}><Menu size={22} /></button><span>CPSTL</span><ChevronRight size={14} /><strong>{pages.find(([key]) => key === page)?.[1]}</strong></div><div className="topbar-right"><span className="planning-role"><UserCheck size={15} />Head of function</span><Avatar name={session.name} small /></div></header>
       <main>
@@ -59,7 +63,8 @@ export default function HofWorkspace({ session, onSession, onDelivery }) {
         {error && <div className="load-error"><ErrorBox error={error} /><button className="btn btn-secondary" onClick={refresh}>Retry</button></div>}
         {loading ? <div className="content-loading"><LoaderCircle className="spin" /><p>Loading your work and team…</p></div> : !error && <>
           <div className="hof-filters"><span><Building2 size={16} />Your scope</span><select aria-label="Performance year" value={year} onChange={e => setYear(e.target.value)}>{years.map(value => <option key={value}>{value}</option>)}</select><select aria-label="Department scope" value={department} onChange={e => setDepartment(e.target.value)}><option value="all">All my departments</option>{data.departments.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small>{data.departments.length} department{data.departments.length === 1 ? '' : 's'} led by you</small></div>
-          {page === 'overview' && <>
+          {page === 'overview' && <><DashboardCharts title="Function delivery analytics" records={scoped.map(r => ({ id: `${r.plan_id}-${r.activity_code}`, label: r.activity, group: data.departments.find(d => same(d.id, r.department_id))?.name, status: r.source_changed || !r.assignee_eligible ? 'Review assignment' : !r.assignment ? 'Unassigned' : Number(r.assignment.confirmed_progress) === 100 ? 'Approved' : Number(r.assignment.reported_progress) > 0 ? 'In progress' : 'Assigned', reported: Number(r.assignment?.reported_progress || 0), approved: r.source_changed || !r.assignee_eligible ? 0 : Number(r.assignment?.confirmed_progress || 0) }))} /><details className="reporting-details"><summary>View organization reporting chart</summary><OrganizationChart /></details>
+            <WorkFocus items={scoped.filter(row => !row.assignment || row.source_changed || !row.assignee_eligible || Number(row.assignment.confirmed_progress) < 100).map(row => ({ id: `${row.plan_id}-${row.activity_code}`, title: row.activity, meta: `${row.kpa_title} → ${row.kpi_title}`, due: row.assignment?.due_date || row.due_date, status: !row.assignment ? 'Assign an owner' : row.source_changed || !row.assignee_eligible ? 'Review assignment' : `${Number(row.assignment.confirmed_progress)}% approved`, priority: !row.assignment || row.source_changed || !row.assignee_eligible ? 1 : undefined, onOpen: () => setModal({ kind: 'assign', row }) }))} subtitle="Ownership gaps, deadlines and assignments that need review" />
             <section className="stats-grid" aria-label="HOF work summary">{[['Published activities', scoped.length, 'From your personal plan', ClipboardList, 'blue'], ['My work', own.length, 'Responsibilities kept by you', UserCheck, 'mint'], ['Delegated work', delegated.length, 'Managers and direct employees', Network, 'lilac'], ['Unassigned', unassigned.length, 'Waiting for an owner', Target, 'sand']].map(([label, value, caption, Icon, tone]) => <article className="stat" key={label}><div className="stat-top"><span>{label}</span><span className={`stat-icon ${tone}`}><Icon size={19} /></span></div><strong>{String(value).padStart(2, '0')}</strong><small><span className={`tiny-dot ${tone}`} />{caption}</small></article>)}</section>
             <section className="hof-banner"><div><span className="planning-intro-icon"><Network size={25} /></span><div><h2>One plan. The right people to deliver it.</h2><p>Delegate a full KPI, assign individual activities, or give work directly to an employee. Parent contribution and personal allocation stay separate.</p></div></div><div className="hof-banner-actions"><button className="btn btn-secondary" onClick={() => navigate('breakdown')}><FolderTree size={16} />Plan breakdown</button><button className="btn btn-primary" onClick={() => navigate('activities')}>Assign work <ArrowRight size={16} /></button></div></section>
           </>}
@@ -96,4 +101,7 @@ function ProgressForm({ row, onClose, onSaved }) {
   }
   return <form onSubmit={submit}><div className="modal-body"><ErrorBox error={error} /><Field label="Reported progress (%)" required><input type="number" min="0" max="100" step="0.01" value={progress} onChange={e => setProgress(e.target.value)} required /></Field><Field label="Progress update" required><textarea rows={4} required maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="Describe what you have done and what remains" /></Field><div className="form-note"><Target size={18} /><span>Even 100% reported progress is unverified. It does not confirm completion or increase an approved KPI score.</span></div></div><div className="modal-footer"><button className="btn btn-secondary" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16} /> : <CheckCircle2 size={16} />}Save reported progress</button></div></form>;
 }
+
+
+
 

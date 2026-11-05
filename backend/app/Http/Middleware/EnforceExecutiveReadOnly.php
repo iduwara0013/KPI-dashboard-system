@@ -10,7 +10,7 @@ class EnforceExecutiveReadOnly
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->user()?->system_role === 'md' && ! $request->isMethodSafe() && ! $request->is('api/login', 'api/logout')) {
+        if ($request->user()?->system_role === 'md' && ! $request->isMethodSafe() && ! $request->is('api/login', 'api/logout', 'api/notifications/read-all', 'api/notifications/*/read')) {
             abort(403, 'MD access is read-only.');
         }
 

@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import DashboardCharts from './DashboardCharts.jsx';
+import OrganizationChart from './OrganizationChart.jsx';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, ChevronRight, CircleHelp,
   ClipboardList, FileCheck2, FilePenLine, FolderTree, History, LayoutDashboard,
@@ -6,10 +8,11 @@ import {
   Trash2, Users, X,
 } from 'lucide-react';
 import { request } from './api.js';
-import { Avatar, Badge, Brand, Empty, ErrorBox, Field, Modal } from './components.jsx';
+import { Avatar, Badge, Brand, Empty, ErrorBox, Field, Modal, MonthlyKpiLink, RouteLink } from './components.jsx';
 import './planning.css';
 import PersonalAllocationWorkspace from './PersonalAllocationWorkspace.jsx';
 import HofReviewers from './HofReviewers.jsx';
+import { workspacePath } from './workspaceRoutes.js';
 
 const emptyWorkspace = { plans: [], owners: [], departments: [], memberships: [], can_edit: false };
 const sameId = (a, b) => String(a) === String(b);
@@ -22,11 +25,10 @@ const dateLabel = value => value ? new Date(value.includes('Z') || value.include
 const recent = value => value && Date.now() - new Date(value.replace(' ', 'T') + (value.includes('Z') ? '' : 'Z')).getTime() < 3 * 86400000;
 const newId = prefix => `${prefix}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
-export default function PlanWorkspace({ session, onSession, onWork }) {
+export default function PlanWorkspace({ session, onSession, page, onWork }) {
   const [data, setData] = useState(emptyWorkspace);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [page, setPage] = useState('overview');
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -37,6 +39,7 @@ export default function PlanWorkspace({ session, onSession, onWork }) {
   const [pending, setPending] = useState(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState('');
+  const leaving = useRef(false);
   const editor = session.system_role === 'plan_editor';
   const roleName = editor ? 'Performance plan editor' : 'Head of function';
 
@@ -49,14 +52,21 @@ export default function PlanWorkspace({ session, onSession, onWork }) {
   useEffect(() => { refresh().catch(() => {}); }, []);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 4500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => {
-    function preventLoss(e) { if (dirty) { e.preventDefault(); e.returnValue = ''; } }
+    function preventLoss(e) { if (dirty && !leaving.current) { e.preventDefault(); e.returnValue = ''; } }
     window.addEventListener('beforeunload', preventLoss);
     return () => window.removeEventListener('beforeunload', preventLoss);
   }, [dirty]);
 
   function guard(action) { if (dirty) setPending(() => action); else action(); }
+  function leave(path) {
+    leaving.current = true;
+    window.location.assign(path);
+  }
   function navigate(next) {
-    guard(() => { setPage(next); setDetail(null); setDirty(false); setMobileNav(false); setQuery(''); setStatus('all'); setYear('all'); });
+    guard(() => {
+      if (next !== page) { leave(workspacePath('planning', next)); return; }
+      setDetail(null); setDirty(false); setMobileNav(false); setQuery(''); setStatus('all'); setYear('all');
+    });
   }
   async function openPlan(id, showHistory = false) {
     setDetailLoading(true); setError(null); setMobileNav(false);
@@ -89,14 +99,15 @@ export default function PlanWorkspace({ session, onSession, onWork }) {
   return <div className="app-shell planning-shell">
     {mobileNav && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
     <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
-      <a className="brand" href="#planning" aria-label="CPSTL performance planning overview" onClick={e => { e.preventDefault(); navigate('overview'); }}><Brand /></a>
+      <RouteLink className="brand" href="/planning/overview" aria-label="CPSTL performance planning overview" onNavigate={() => navigate('overview')}><Brand /></RouteLink>
       <div className="workspace-label"><span className="workspace-dot" /> PERFORMANCE WORKSPACE</div><div className="nav-caption">{editor ? 'PLAN EDITOR' : 'MY PERFORMANCE'}</div>
       <nav aria-label="Performance planning">{[
         ...(editor ? [['reviewers', 'HOF work reviewers', ShieldCheck]] : []),
         ['overview', 'Overview', LayoutDashboard], ['plans', editor ? 'Performance plans' : 'My published plans', FolderTree], ['history', 'Plan history', History],
-      ].map(([id, label, Icon]) => <button key={id} className={`nav-item ${page === id && !detail ? 'nav-active' : ''}`} onClick={() => navigate(id)}><Icon size={19} /><span>{label}</span>{id === 'plans' && <span className="nav-count">{data.plans.length}</span>}</button>)}
+      ].map(([id, label, Icon]) => <RouteLink key={id} href={workspacePath('planning', id)} aria-current={page === id ? 'page' : undefined} className={`nav-item ${page === id && !detail ? 'nav-active' : ''}`} onNavigate={() => navigate(id)}><Icon size={19} /><span>{label}</span>{id === 'plans' && <span className="nav-count">{data.plans.length}</span>}</RouteLink>)}
         {onWork && <button className="nav-item" onClick={onWork}><ArrowLeft size={19} /><span>Work dashboard</span></button>}
-        {editor && <button className="nav-item" onClick={() => navigate('allocations')}><Users size={19} /><span>Personal allocations</span></button>}
+        {editor && <RouteLink className="nav-item" href="/planning/allocations" onNavigate={() => navigate('allocations')}><Users size={19} /><span>Personal allocations</span></RouteLink>}
+        <MonthlyKpiLink onNavigate={() => guard(() => leave('/kpi-results'))} />
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-tip"><span className="tip-icon"><Target size={23} /></span><strong>{editor ? 'Every responsibility counts.' : 'Your agreed responsibilities.'}</strong><p>{editor ? 'One personal plan, with clear targets and a complete 100% allocation.' : 'See the latest published plan and the targets agreed for your role.'}</p><button onClick={() => setModal({ kind: 'guide' })}>Planning guide <ChevronRight size={15} /></button></div>
         <div className="sidebar-user"><Avatar name={session.name} small /><span><strong>{session.name}</strong><small>{roleName}</small></span><button className="icon-button" title="Sign out" aria-label="Sign out" onClick={() => guard(logout)}><LogOut size={17} /></button></div>
@@ -107,7 +118,7 @@ export default function PlanWorkspace({ session, onSession, onWork }) {
         {error && <div className="load-error"><ErrorBox error={error} /><button className="btn btn-secondary" onClick={() => refresh().catch(() => {})}>Retry</button></div>}
         {loading || detailLoading ? <div className="content-loading"><LoaderCircle className="spin" /><p>Opening performance plans…</p></div> : detail ? <PlanEditor key={`${detail.plan.id}-${detail.plan.revision}`} detail={detail} data={data} onDirty={setDirty} onBack={() => navigate('plans')} onSaved={saved} onHistory={() => setModal({ kind: 'history' })} /> : <>
           <div className="page-heading"><div><div className="eyebrow">{editor ? 'PERFORMANCE PLANNING' : 'PUBLISHED RESPONSIBILITIES'}</div><h1>{page === 'history' ? 'A clear record of every revision.' : editor ? 'Performance plans, connected.' : 'My performance plans'}</h1><p>{page === 'history' ? 'Choose a plan to review saved changes and publication history.' : editor ? 'Define KPAs, agree KPI targets and publish complete plans for your HOFs.' : 'Your published KPAs, KPI targets and supporting activities in one place.'}</p></div>{editor && page !== 'history' && <div className="heading-actions"><button className="btn btn-primary" onClick={() => setModal({ kind: 'create' })} disabled={!canCreate}><Plus size={18} /> Create plan</button></div>}</div>
-          {page === 'overview' && <>
+          {page === 'overview' && <><DashboardCharts title="Planning analytics" groupTitle="Plans by HOF" records={data.plans.map(p => ({ id: p.id, label: p.title, status: p.status === 'published' ? 'Published' : 'Draft', group: ownerOf(data, p.owner_id)?.name || 'Previous HOF' }))} /><details className="reporting-details"><summary>View organization reporting chart</summary><OrganizationChart /></details>
             <section className="stats-grid" aria-label="Planning summary">{[
               [editor ? 'Personal plans' : 'Published plans', data.plans.length, editor ? 'Across your HOFs' : 'Available to you', FolderTree, 'mint'],
               ['Published', published.length, 'Ready for HOFs to view', FileCheck2, 'blue'],
@@ -238,3 +249,5 @@ function VersionHistory({ versions, data }) {
   const display = (field, value) => value === null || value === undefined || value === '' ? 'Not set' : field === 'weight' ? percent(value) : field === 'department_id' ? departmentOf(data, value)?.name || 'Department changed' : field === 'parent_id' ? 'Placement updated' : field === 'is_active' ? (Number(value) ? 'Yes' : 'No') : String(value);
   return <div className="modal-body version-history">{!versions.length ? <Empty icon={History} title="No revisions yet" text="Saved changes will appear here." /> : versions.map(version => <section className="version-entry" key={version.id}><div className="version-entry-heading"><span className={`version-icon ${version.event === 'published' ? 'version-published' : ''}`}>{version.event === 'published' ? <Send size={17} /> : <Save size={17} />}</span><div><h3>Version {version.version} <Badge tone={version.event === 'published' ? 'mint' : 'neutral'}>{version.event === 'published' ? 'Published' : version.event === 'created' ? 'Draft created' : 'Draft updated'}</Badge></h3><p>{version.actor_name} · {dateLabel(version.created_at)}</p></div></div>{version.changes.length > 0 ? <div className="version-changes">{version.changes.map((change, i) => <details key={`${change.code}-${i}`}><summary><Badge tone={change.type === 'added' ? 'mint' : change.type === 'removed' ? 'draft' : 'neutral'}>{change.type}</Badge><span><small>{change.code}</small>{change.title}</span>{Object.keys(change.fields).length > 0 && <ChevronRight size={14} />}</summary>{Object.entries(change.fields).length > 0 && <dl>{Object.entries(change.fields).map(([field, values]) => <div key={field}><dt>{labels[field] || field}</dt><dd><span>{display(field, values.before)}</span><ArrowRight size={12} /><strong>{display(field, values.after)}</strong></dd></div>)}</dl>}</details>)}</div> : <p className="version-publication-note">{version.event === 'published' ? 'The saved plan became available to its HOF.' : 'The personal plan was created.'}</p>}</section>)}</div>;
 }
+
+
