@@ -1,5 +1,5 @@
 const pages = {
-  admin: ['overview', 'people', 'departments', 'access', 'activity'],
+  admin: ['overview', 'people', 'departments', 'reporting', 'access', 'activity'],
   planning: ['overview', 'plans', 'history', 'reviewers', 'allocations'],
   md: ['overview', 'departments', 'hofs', 'work'],
   hof: ['overview', 'breakdown', 'activities', 'own', 'delegated', 'team', 'personal'],
@@ -25,7 +25,7 @@ export function resolveWorkspace(pathname, user) {
     ?? (hof ? 'hof' : 'delivery');
   const access = {
     admin: role === 'super_admin',
-    planning: role === 'plan_editor',
+    planning: role === 'plan_editor' || (delivery && user.can_view_plans),
     md: role === 'md',
     hof,
     delivery,
@@ -42,6 +42,7 @@ export function resolveWorkspace(pathname, user) {
     = path === '/' ? [home] : path.slice(1).split('/');
   if (extra.length || !Object.hasOwn(pages, workspace) || !pages[workspace].includes(page)) return { error: 'not_found' };
   const managerOnly = workspace === 'delivery' && ['overview', 'activities', 'team'].includes(page);
-  if (!access[workspace] || (managerOnly && !user.workspaces?.includes('manager'))) return { error: 'forbidden' };
+  const editorOnly = workspace === 'planning' && ['reviewers', 'allocations'].includes(page);
+  if (!access[workspace] || (managerOnly && !user.workspaces?.includes('manager')) || (editorOnly && role !== 'plan_editor')) return { error: 'forbidden' };
   return { workspace, page };
 }

@@ -5,21 +5,131 @@ import { Avatar, Empty, ErrorBox } from './components.jsx';
 import './organization-chart.css';
 
 const same = (a, b) => String(a) === String(b);
-const labels = { hof: 'Head of function', manager: 'Manager', employee: 'Employee' };
+export const reportingRoles = { hof: 'Head of function', manager: 'Manager', employee: 'Employee' };
+
 export default function OrganizationChart() {
-  const [data, setData] = useState(null), [error, setError] = useState(null), [department, setDepartment] = useState(''), [zoom, setZoom] = useState(1), [selected, setSelected] = useState(null), [collapsed, setCollapsed] = useState(new Set());
-  async function load() { try { const result = await request('/organization-chart'); setData(result); setDepartment(previous => previous || String(result.departments[0]?.id || '')); setError(null); } catch (err) { setError(err); } }
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [department, setDepartment] = useState('');
+  const [selected, setSelected] = useState(null);
+  async function load() {
+    try {
+      const result = await request('/organization-chart');
+      setData(result);
+      setDepartment(previous => previous || String(result.departments[0]?.id || ''));
+      setError(null);
+    } catch (err) {
+      setError(err);
+    }
+  }
   useEffect(() => { load(); }, []);
-  const people = (data?.people || []).filter(p => same(p.department_id, department));
-  const links = (data?.links || []).filter(l => same(l.department_id, department));
-  const roots = people.filter(p => !links.some(l => same(l.user_id, p.id)));
-  const visible = new Set(roots.map(p => String(p.id))), queue = [...visible];
-  for (let i = 0; i < queue.length; i++) { const id = queue[i]; if (collapsed.has(id)) continue; for (const link of links.filter(l => same(l.manager_id, id))) { const child = String(link.user_id); if (!visible.has(child)) { visible.add(child); queue.push(child); } } }
-  const levels = Object.fromEntries(people.map(p => [p.id, 0]));
-  for (let i = 0; i < people.length; i++) { let changed = false; for (const l of links) { if (levels[l.user_id] <= levels[l.manager_id]) { levels[l.user_id] = Math.min(people.length, levels[l.manager_id] + 1); changed = true; } } if (!changed) break; }
-  const counters = {}, positions = {};
-  for (const person of people.filter(p => visible.has(String(p.id))).sort((a, b) => a.name.localeCompare(b.name))) { const level = levels[person.id]; positions[person.id] = { x: 25 + level * 270, y: 25 + (counters[level] || 0) * 135 }; counters[level] = (counters[level] || 0) + 1; }
-  const width = Math.max(560, ...Object.values(positions).map(p => p.x + 245)), height = Math.max(200, ...Object.values(positions).map(p => p.y + 130));
-  const person = people.find(p => same(p.id, selected));
-  return <section className="panel org-chart"><div className="panel-heading"><div><span className="eyebrow">PEOPLE & RESPONSIBILITIES</span><h2><Network size={19} /> How your team connects</h2><p>Actual reporting relationships · Select a person to see their designation and connections.</p></div></div><ErrorBox error={error} />{error ? <button className="btn btn-secondary" onClick={load}>Retry</button> : !data ? <p className="org-loading">Loading reporting structure…</p> : !people.length ? <Empty icon={Network} title="Your reporting structure will appear here" text="An administrator can connect people using department responsibilities and reporting managers." /> : <><div className="org-toolbar"><label>Department<select aria-label="Chart department" value={department} onChange={e => { setDepartment(e.target.value); setSelected(null); setCollapsed(new Set()); }}>{data.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label><span>{people.length} people · {links.length} reporting links</span><div><button className="icon-button" aria-label="Zoom out chart" onClick={() => setZoom(z => Math.max(.5, z - .1))}><Minus size={16} /></button><small>{Math.round(zoom * 100)}%</small><button className="icon-button" aria-label="Zoom in chart" onClick={() => setZoom(z => Math.min(1.5, z + .1))}><Plus size={16} /></button><button className="icon-button" aria-label="Reset chart" onClick={() => { setZoom(1); setCollapsed(new Set()); }}><RotateCcw size={16} /></button></div></div><div className="org-canvas" tabIndex={0} aria-label="Reporting chart, scroll to explore"><div style={{ width: width * zoom, height: height * zoom }}><div className="org-scene" style={{ width, height, transform: `scale(${zoom})` }}><svg width={width} height={height} aria-hidden="true">{links.filter(l => positions[l.manager_id] && positions[l.user_id]).map((l, i) => { const a = positions[l.manager_id], b = positions[l.user_id]; return <path key={i} d={`M ${a.x + 220} ${a.y + 48} C ${a.x + 245} ${a.y + 48}, ${b.x - 25} ${b.y + 48}, ${b.x} ${b.y + 48}`} />; })}</svg>{people.filter(p => positions[p.id]).map(p => { const children = links.filter(l => same(l.manager_id, p.id)).length; return <div className={`org-node org-${p.responsibility} ${same(p.id, selected) ? 'org-selected' : ''}`} key={p.id} style={{ left: positions[p.id].x, top: positions[p.id].y }}><button className="org-person" onClick={() => setSelected(p.id)}><Avatar name={p.name} small /><span><small>{labels[p.responsibility]}</small><strong>{p.name}</strong><em>{p.designation || 'Designation not set'}</em></span></button>{children > 0 && <button className="org-branch" aria-expanded={!collapsed.has(String(p.id))} onClick={() => setCollapsed(previous => { const next = new Set(previous); const id = String(p.id); next.has(id) ? next.delete(id) : next.add(id); return next; })}>{children} direct reports <ChevronRight size={12} /></button>}</div>; })}</div></div></div>{person && <div className="org-details"><Avatar name={person.name} /><div><strong>{person.name}</strong><p>{person.designation} · {labels[person.responsibility]}</p><small>Reports to: {links.filter(l => same(l.user_id, person.id)).map(l => people.find(p => same(p.id, l.manager_id))?.name).filter(Boolean).join(', ') || 'No reporting manager configured'}</small></div></div>}<div className="org-note">Titles describe designations. Access follows assigned system roles and department responsibilities. Only configured reporting links are drawn.</div></>}</section>;
+  const people = (data?.people || []).filter(person => same(person.department_id, department));
+  const links = (data?.links || []).filter(link => same(link.department_id, department));
+  const person = people.find(item => same(item.id, selected));
+  return <section className="panel org-chart">
+    <div className="panel-heading"><div><span className="eyebrow">PEOPLE & RESPONSIBILITIES</span><h2><Network size={19} /> How your team connects</h2><p>Actual reporting relationships · Select a person to see their designation and connections.</p></div></div>
+    <ErrorBox error={error} />
+    {error ? <button className="btn btn-secondary" onClick={load}>Retry</button> : !data ? <p className="org-loading">Loading reporting structure…</p> :
+      !people.length ? <Empty icon={Network} title="Your reporting structure will appear here" text="An administrator can connect people using department responsibilities and reporting managers." /> : <>
+        <div className="org-toolbar"><label>Department<select aria-label="Chart department" value={department} onChange={event => {
+          setDepartment(event.target.value);
+          setSelected(null);
+        }}>{data.departments.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <span>{people.length} people · {links.length} reporting links</span>
+        </div>
+        <ReportingGraph key={department} people={people} links={links} selected={selected} onSelect={setSelected} />
+        {person && <div className="org-details"><Avatar name={person.name} /><div>
+          <strong>{person.name}</strong><p>{person.designation} · {reportingRoles[person.responsibility]}</p>
+          <small>Reports to: {links.filter(link => same(link.user_id, person.id)).map(link => people.find(item => same(item.id, link.manager_id))?.name).filter(Boolean).join(', ') || 'No reporting manager configured'}</small>
+        </div></div>}
+        <div className="org-note">Titles describe designations. Access follows assigned system roles and department responsibilities. Only configured reporting links are drawn.</div>
+      </>}
+  </section>;
+}
+
+export function ReportingGraph({ people, links, selected, onSelect, showUnassigned = false }) {
+  const [zoom, setZoom] = useState(1);
+  const [collapsed, setCollapsed] = useState(new Set());
+  const roots = people.filter(person => !links.some(link => same(link.user_id, person.id)));
+  const visible = new Set(roots.map(person => String(person.id)));
+  const queue = [...visible];
+  for (let i = 0; i < queue.length; i++) {
+    const id = queue[i];
+    if (collapsed.has(id)) continue;
+    for (const link of links.filter(item => same(item.manager_id, id))) {
+      const child = String(link.user_id);
+      if (!visible.has(child)) {
+        visible.add(child);
+        queue.push(child);
+      }
+    }
+  }
+
+  const levels = Object.fromEntries(people.map(person => [person.id, 0]));
+  for (let i = 0; i < people.length; i++) {
+    let changed = false;
+    for (const link of links) {
+      if (levels[link.user_id] <= levels[link.manager_id]) {
+        levels[link.user_id] = Math.min(people.length, levels[link.manager_id] + 1);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
+  const counters = {};
+  const positions = {};
+  for (const person of people.filter(item => visible.has(String(item.id))).sort((a, b) => a.name.localeCompare(b.name))) {
+    const level = levels[person.id];
+    positions[person.id] = { x: 25 + level * 270, y: 25 + (counters[level] || 0) * 135 };
+    counters[level] = (counters[level] || 0) + 1;
+  }
+  const width = Math.max(560, ...Object.values(positions).map(point => point.x + 245));
+  const height = Math.max(200, ...Object.values(positions).map(point => point.y + 130));
+
+  function toggleBranch(id) {
+    setCollapsed(previous => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return <>
+    <div className="org-toolbar org-zoom">
+      <button className="icon-button" aria-label="Zoom out chart" onClick={() => setZoom(value => Math.max(.5, value - .1))}><Minus size={16} /></button>
+      <small>{Math.round(zoom * 100)}%</small>
+      <button className="icon-button" aria-label="Zoom in chart" onClick={() => setZoom(value => Math.min(1.5, value + .1))}><Plus size={16} /></button>
+      <button className="icon-button" aria-label="Reset chart" onClick={() => { setZoom(1); setCollapsed(new Set()); }}><RotateCcw size={16} /></button>
+    </div>
+    <div className="org-canvas" tabIndex={0} aria-label="Reporting chart, scroll to explore">
+      <div style={{ width: width * zoom, height: height * zoom }}>
+        <div className="org-scene" style={{ width, height, transform: `scale(${zoom})` }}>
+          <svg width={width} height={height} aria-hidden="true">
+            {links.filter(link => positions[link.manager_id] && positions[link.user_id]).map(link => {
+              const start = positions[link.manager_id];
+              const end = positions[link.user_id];
+              return <path key={`${link.manager_id}:${link.user_id}`} className={link.pending ? 'org-link-pending' : undefined}
+                d={`M ${start.x + 220} ${start.y + 48} C ${start.x + 245} ${start.y + 48}, ${end.x - 25} ${end.y + 48}, ${end.x} ${end.y + 48}`} />;
+            })}
+          </svg>
+          {people.filter(person => positions[person.id]).map(person => {
+            const children = links.filter(link => same(link.manager_id, person.id)).length;
+            const id = String(person.id);
+            return <div className={`org-node org-${person.responsibility} ${same(person.id, selected) ? 'org-selected' : ''}`} key={id}
+              style={{ left: positions[id].x, top: positions[id].y }}>
+              <button className="org-person" aria-pressed={same(person.id, selected)} onClick={() => onSelect(person.id)}>
+                <Avatar name={person.name} small /><span>
+                  <small>{reportingRoles[person.responsibility]}{person.is_active === false && ' · Inactive'}{showUnassigned && !links.some(link => same(link.user_id, id)) && ' · Unassigned'}</small>
+                  <strong>{person.name}</strong><em>{person.responsibility_title || person.designation || 'Designation not set'}</em>
+                </span>
+              </button>
+              {children > 0 && <button className="org-branch" aria-expanded={!collapsed.has(id)} onClick={() => toggleBranch(id)}>{children} direct reports <ChevronRight size={12} /></button>}
+            </div>;
+          })}
+        </div>
+      </div>
+    </div>
+  </>;
 }

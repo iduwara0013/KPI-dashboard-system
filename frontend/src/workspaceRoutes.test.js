@@ -27,6 +27,10 @@ test('direct links restore the selected page and enforce workspace access', () =
   assert.deepEqual(resolveWorkspace('/admin/people', hof), { error: 'forbidden' });
   assert.deepEqual(resolveWorkspace('/display', employee), { error: 'forbidden' });
   assert.deepEqual(resolveWorkspace('/kpi-results', employee), { workspace: 'kpi-results' });
+  assert.deepEqual(resolveWorkspace('/planning/plans', employee), { error: 'forbidden' });
+  const planOwner = { ...employee, can_view_plans: true };
+  assert.deepEqual(resolveWorkspace('/planning/plans', planOwner), { workspace: 'planning', page: 'plans' });
+  assert.deepEqual(resolveWorkspace('/planning/reviewers', planOwner), { error: 'forbidden' });
 });
 
 test('a typo in a standalone or workspace URL resolves to page not found', () => {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,15 +41,24 @@ class AdminController extends Controller
             'email' => ['required', 'email', 'max:180', Rule::unique('users')->ignore($user?->id)],
             'employee_number' => ['required', 'string', 'max:40', Rule::unique('users')->ignore($user?->id)],
             'designation' => ['required', 'string', 'max:120'],
+            'grade' => ['nullable', 'string', 'max:30'],
             'system_role' => ['required', Rule::in(['super_admin', 'md', 'plan_editor', 'member'])],
             'is_active' => ['required', 'boolean'],
             'password' => [$exists ? 'nullable' : 'required', 'string', 'min:12', 'max:128'],
             'memberships' => ['present', 'array', 'max:30'],
             'memberships.*.department_id' => ['required', 'integer', 'distinct', Rule::exists('departments', 'id')->where('is_active', true)],
             'memberships.*.responsibility' => ['required', Rule::in(['hof', 'manager', 'employee'])],
+            'memberships.*.responsibility_title' => ['nullable', 'string', 'max:120'],
             'memberships.*.manager_ids' => ['present', 'array', 'max:10'],
             'memberships.*.manager_ids.*' => ['required', 'integer', Rule::exists('users', 'id')->where('is_active', true)],
         ]);
+
+        if ($data['is_active'] && str_ends_with($data['email'], '@pending.cpstl.invalid')) {
+            throw ValidationException::withMessages(['email' => 'Enter the employee’s work email before activating the account.']);
+        }
+        if ($data['is_active'] && str_ends_with((string) $user?->email, '@pending.cpstl.invalid') && empty($data['password'])) {
+            throw ValidationException::withMessages(['password' => 'Set an initial password before activating the imported account.']);
+        }
 
         if ($user?->id === $request->user()->id && (! $data['is_active'] || $data['system_role'] !== 'super_admin')) {
             throw ValidationException::withMessages(['system_role' => 'You cannot deactivate or remove administrator access from your current account.']);
@@ -59,6 +69,7 @@ class AdminController extends Controller
             DB::table('users')->orderBy('id')->lockForUpdate()->get(['id']);
             $this->validateReporting($data, $user?->id);
             $before = $exists ? $this->userState($user) : null;
+            $previousMemberships = collect($before['memberships'] ?? [])->keyBy('department_id');
             $attributes = collect($data)->except(['memberships', 'password'])->all();
             if (! empty($data['password'])) {
                 $attributes['password'] = $data['password'];
@@ -69,8 +80,12 @@ class AdminController extends Controller
             DB::table('reporting_relationships')->where('user_id', $saved->id)->delete();
             DB::table('department_memberships')->where('user_id', $saved->id)->delete();
             foreach ($data['memberships'] as $membership) {
+                $title = array_key_exists('responsibility_title', $membership)
+                    ? $membership['responsibility_title']
+                    : $previousMemberships->get($membership['department_id'])?->responsibility_title;
                 DB::table('department_memberships')->insert([
                     'user_id' => $saved->id, 'department_id' => $membership['department_id'],
+                    'responsibility_title' => $title,
                     'responsibility' => $membership['responsibility'], 'created_at' => now(), 'updated_at' => now(),
                 ]);
                 foreach ($membership['manager_ids'] as $managerId) {
@@ -85,6 +100,139 @@ class AdminController extends Controller
         });
 
         return response()->json(['user' => $saved], $exists ? 200 : 201);
+    }
+
+    public function removeUser(Request $request, int $user): JsonResponse
+    {
+        abort_if($request->user()->id === $user, 422, 'You cannot remove the account you are signed in with.');
+
+        DB::transaction(function () use ($request, $user): void {
+            DB::table('users')->orderBy('id')->lockForUpdate()->get(['id']);
+            $person = User::findOrFail($user);
+            abort_if(DB::table('reporting_relationships')->where('manager_id', $user)->exists(), 409,
+                'Reassign this person’s direct reports before removing the account.');
+
+            DB::table('reporting_relationships')->where('user_id', $user)->delete();
+            DB::table('department_memberships')->where('user_id', $user)->delete();
+            DB::table('work_notifications')->where('user_id', $user)->delete();
+            DB::table('sessions')->where('user_id', $user)->delete();
+            DB::table('password_reset_tokens')->where('email', $person->email)->delete();
+            try {
+                $person->delete();
+            } catch (QueryException $exception) {
+                if ($this->isForeignKeyViolation($exception)) {
+                    abort(409, 'This person is linked to saved work or audit history. Keep the account inactive to preserve those records.');
+                }
+                throw $exception;
+            }
+
+            $this->record($request, 'user.removed', $person->name, $person->only(['id', 'employee_number']), null);
+        });
+
+        return response()->json(['message' => 'Person removed.']);
+    }
+
+    public function removeDepartment(Request $request, int $department): JsonResponse
+    {
+        DB::transaction(function () use ($request, $department): void {
+            $query = DB::table('departments')->where('id', $department);
+            $record = (clone $query)->lockForUpdate()->first();
+            abort_unless($record, 404, 'Department not found.');
+            abort_if(DB::table('department_memberships')->where('department_id', $department)->exists(), 409,
+                'Move or remove the department’s people assignments before removing it.');
+
+            try {
+                $query->delete();
+            } catch (QueryException $exception) {
+                if ($this->isForeignKeyViolation($exception)) {
+                    abort(409, 'This department is linked to saved work or reporting records and cannot be removed.');
+                }
+                throw $exception;
+            }
+            $this->record($request, 'department.removed', $record->name, (array) $record, null);
+        });
+
+        return response()->json(['message' => 'Department removed.']);
+    }
+
+    private function isForeignKeyViolation(QueryException $exception): bool
+    {
+        return ($exception->errorInfo[0] ?? null) === '23000'
+            && ((int) ($exception->errorInfo[1] ?? 0) === 547
+                || str_contains(strtoupper($exception->errorInfo[2] ?? ''), 'FOREIGN KEY'));
+    }
+
+    public function saveDepartmentReporting(Request $request, int $department): JsonResponse
+    {
+        $data = $request->validate([
+            'changes' => ['required', 'array', 'max:500'],
+            'changes.*.user_id' => ['required', 'integer', 'distinct', 'min:1'],
+            'changes.*.manager_ids' => ['present', 'array', 'max:10'],
+            'changes.*.manager_ids.*' => ['required', 'integer', 'min:1'],
+            'changes.*.expected_manager_ids' => ['present', 'array', 'max:10'],
+            'changes.*.expected_manager_ids.*' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $links = DB::transaction(function () use ($request, $department, $data) {
+            DB::table('users')->orderBy('id')->lockForUpdate()->get(['id']);
+            $record = DB::table('departments')->where('is_active', true)->lockForUpdate()->find($department);
+            abort_unless($record, 404, 'Choose an active department.');
+            $members = DB::table('department_memberships as m')->join('users as u', 'u.id', '=', 'm.user_id')
+                ->where('m.department_id', $department)->get(['u.id', 'u.is_active', 'm.responsibility'])->keyBy('id');
+            $reporting = DB::table('reporting_relationships')->where('department_id', $department);
+            $graph = $reporting->get()->groupBy('user_id')->map(function ($rows): array {
+                return $rows->pluck('manager_id')->map(fn ($id): int => (int) $id)->sort()->values()->all();
+            })->all();
+            $before = [];
+            $after = [];
+
+            foreach ($data['changes'] as $index => $change) {
+                $userId = (int) $change['user_id'];
+                $expected = array_map('intval', $change['expected_manager_ids']);
+                sort($expected);
+                abort_unless($members->has($userId) && ($graph[$userId] ?? []) === $expected, 409,
+                    'This department or its reporting links changed. Reload the structure before saving.');
+                $managerIds = array_map('intval', $change['manager_ids']);
+                sort($managerIds);
+                $field = "changes.$index.manager_ids";
+                if (count($managerIds) !== count(array_unique($managerIds))) {
+                    throw ValidationException::withMessages([$field => 'Choose each reporting manager only once.']);
+                }
+                foreach ($managerIds as $managerId) {
+                    $manager = $members->get($managerId);
+                    if ($managerId === $userId || ! $manager?->is_active || ! in_array($manager->responsibility, ['hof', 'manager'], true)) {
+                        throw ValidationException::withMessages([$field => 'Choose another active HOF or manager in this department.']);
+                    }
+                }
+                if ($managerIds !== $expected) {
+                    $before[$userId] = $expected;
+                    $after[$userId] = $managerIds;
+                    $graph[$userId] = $managerIds;
+                }
+            }
+
+            foreach ($after as $userId => $managerIds) {
+                foreach ($managerIds as $managerId) {
+                    if ($this->reaches($graph, $managerId, $userId, [])) {
+                        throw ValidationException::withMessages(['changes' => 'These changes would create a circular reporting structure.']);
+                    }
+                }
+                (clone $reporting)->where('user_id', $userId)->delete();
+                foreach ($managerIds as $managerId) {
+                    DB::table('reporting_relationships')->insert([
+                        'department_id' => $department, 'user_id' => $userId, 'manager_id' => $managerId,
+                        'created_at' => now(), 'updated_at' => now(),
+                    ]);
+                }
+            }
+            if ($after !== []) {
+                $this->record($request, 'department.reporting_updated', $record->name, $before, $after);
+            }
+
+            return $reporting->get();
+        });
+
+        return response()->json(['links' => $links]);
     }
 
     private function validateReporting(array $data, ?int $userId): void
@@ -167,7 +315,7 @@ class AdminController extends Controller
     private function userState(User $user): array
     {
         return [
-            ...$user->only(['id', 'name', 'email', 'employee_number', 'designation', 'system_role', 'is_active']),
+            ...$user->only(['id', 'name', 'email', 'employee_number', 'designation', 'grade', 'system_role', 'is_active']),
             'memberships' => DB::table('department_memberships')->where('user_id', $user->id)->get()->toArray(),
             'reporting' => DB::table('reporting_relationships')->where('user_id', $user->id)->get()->toArray(),
         ];

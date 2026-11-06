@@ -1,5 +1,6 @@
 import DashboardCharts from './DashboardCharts.jsx';
 import OrganizationChart from './OrganizationChart.jsx';
+import DepartmentReporting from './DepartmentReporting.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Building2, Check,
@@ -21,14 +22,31 @@ import { defaultDeliveryPage, resolveWorkspace, workspacePath } from './workspac
 
 const roles = { super_admin: 'System admin', md: 'MD / executive viewer', plan_editor: 'Plan editor', member: 'Team member' };
 const responsibilities = { hof: 'Head of function', manager: 'Manager', employee: 'Employee' };
+const responsibilityTitles = [
+  'CIO',
+  'Manager',
+  'Senior Deputy Manager IS (Info Security)',
+  'Senior Deputy Manager IS (Solutions)',
+  'Deputy Manager IS (Quality Assurance)',
+  'Deputy Manager IS (Solution)',
+  'Deputy Manager IS (System Admin)',
+  'Deputy Manager IS (Network)',
+  'System Controller (Data)',
+  'Head of Data Center',
+  'Assistant Manager Information System',
+  'Assistant Manager IS (Solutions)',
+  'Assistant Head of Data Center',
+  'Junior Operations Executive',
+  'Systems Engineer',
+];
 const navigation = [
   ['overview', 'Overview', LayoutDashboard], ['people', 'People', Users],
-  ['departments', 'Departments', Building2], ['access', 'Access & roles', ShieldCheck],
+  ['departments', 'Departments', Building2], ['reporting', 'Reporting Structure', Network], ['access', 'Access & roles', ShieldCheck],
   ['activity', 'Activity log', Activity],
 ];
 const colors = ['#c5120c', '#243a5e', '#467ea5', '#b78639', '#7863b7', '#66758b'];
 const blankData = { users: [], departments: [], memberships: [], reporting: [], activity: [] };
-const initialUser = { name: '', email: '', employee_number: '', designation: '', system_role: 'member', is_active: true, password: '', memberships: [] };
+const initialUser = { name: '', email: '', employee_number: '', designation: '', grade: '', system_role: 'member', is_active: true, password: '', memberships: [] };
 const initialDepartment = { name: '', code: '', description: '', color: colors[0], is_active: true };
 const idEquals = (a, b) => String(a) === String(b);
 const memberOf = (data, userId) => data.memberships.filter(x => idEquals(x.user_id, userId));
@@ -116,7 +134,8 @@ export default function App() {
   } else if (route.workspace === 'md') {
     workspace = <MdWorkspace key={historyVisit} {...props} notificationTarget={notificationTarget} />;
   } else if (route.workspace === 'planning') {
-    workspace = <PlanWorkspace key={historyVisit} {...props} />;
+    const onWork = session.system_role === 'member' ? () => window.location.assign('/') : undefined;
+    workspace = <PlanWorkspace key={historyVisit} {...props} onWork={onWork} />;
   } else if (route.workspace === 'hof') {
     workspace = <HofWorkspace key={historyVisit} {...props} onDelivery={() => { setNotificationTarget(null); navigate(workspacePath('delivery', defaultDeliveryPage(session))); }} />;
   } else if (route.workspace === 'delivery') {
@@ -167,7 +186,19 @@ function Workspace({ session, onSession, page, onPage }) {
   const [mobileNav, setMobileNav] = useState(false);
   const searchRef = useRef();
   const notify = message => setToast(message);
-  const navigate = next => { onPage(next); setQuery(''); setDepartmentFilter('all'); setStatusFilter('all'); setMobileNav(false); };
+  function navigate(next) {
+    if (page !== next && (page === 'reporting' || next === 'reporting')) {
+      window.location.assign(workspacePath('admin', next));
+      return;
+    }
+    onPage(next);
+    setQuery(''); setDepartmentFilter('all'); setStatusFilter('all'); setMobileNav(false);
+  }
+  function savedReporting(departmentId, links) {
+    setData(previous => ({
+      ...previous, reporting: [...previous.reporting.filter(link => !idEquals(link.department_id, departmentId)), ...links],
+    }));
+  }
   async function refresh() {
     setLoadError(null);
     try { const result = await request('/admin/workspace'); setData(result); return result; }
@@ -203,13 +234,13 @@ function Workspace({ session, onSession, page, onPage }) {
       if (/^\s*[=+@-]|^[\t\r\n]/.test(text)) text = "'" + text;
       return '"' + text.replaceAll('"', '""') + '"';
     };
-    const rows = [['Employee number', 'Name', 'Email', 'Designation', 'System role', 'Status', 'Departments'], ...filteredUsers.map(u => [u.employee_number, u.name, u.email, u.designation, roles[u.system_role], u.is_active ? 'Active' : 'Inactive', memberOf(data, u.id).map(m => `${departmentById(data, m.department_id)?.name} (${responsibilities[m.responsibility]})`).join('; ')])];
+    const rows = [['Employee number', 'Name', 'Email', 'Designation', 'Grade', 'System role', 'Status', 'Departments'], ...filteredUsers.map(u => [u.employee_number, u.name, u.email.endsWith('@pending.cpstl.invalid') ? '' : u.email, u.designation, u.grade, roles[u.system_role], u.is_active ? 'Active' : 'Inactive', memberOf(data, u.id).map(m => `${departmentById(data, m.department_id)?.name} (${responsibilities[m.responsibility]})`).join('; ')])];
     const blob = new Blob(['\uFEFF' + rows.map(row => row.map(safe).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'cpstl-people.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     notify('People directory exported.');
   }
   const filteredUsers = useMemo(() => data.users.filter(u => {
-    const matchesQuery = [u.name, u.email, u.employee_number, u.designation].some(v => String(v || '').toLowerCase().includes(query.toLowerCase()));
+    const matchesQuery = [u.name, u.email, u.employee_number, u.designation, u.grade].some(v => String(v || '').toLowerCase().includes(query.toLowerCase()));
     return matchesQuery && (departmentFilter === 'all' || memberOf(data, u.id).some(m => idEquals(m.department_id, departmentFilter))) && (statusFilter === 'all' || u.is_active === (statusFilter === 'active'));
   }), [data, query, departmentFilter, statusFilter]);
 
@@ -226,11 +257,11 @@ function Workspace({ session, onSession, page, onPage }) {
     </aside>
     <div className="workspace">
       <header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileNav(true)}><Menu size={22} /></button><span>CPSTL</span><ChevronRight size={14} /><strong>{title}</strong></div>
-        <div className="topbar-right"><div className="global-search"><Search size={17} /><input ref={searchRef} value={query} onChange={e => { setQuery(e.target.value); onPage('people'); }} placeholder="Search people…" aria-label="Search people" /><kbd>⌘ K</kbd></div><button className="icon-button help-button" aria-label="Open setup guide" onClick={() => setModal({ kind: 'help' })}><CircleHelp size={20} /></button><span className="topbar-divider" /><Avatar name={session.name} small /></div>
+        <div className="topbar-right">{page !== 'reporting' && <div className="global-search"><Search size={17} /><input ref={searchRef} value={query} onChange={e => { setQuery(e.target.value); onPage('people'); }} placeholder="Search people…" aria-label="Search people" /><kbd>⌘ K</kbd></div>}<button className="icon-button help-button" aria-label="Open setup guide" onClick={() => setModal({ kind: 'help' })}><CircleHelp size={20} /></button><span className="topbar-divider" /><Avatar name={session.name} small /></div>
       </header>
       <main id="main-content">
-        <div className="page-heading"><div><div className="eyebrow">ORGANIZATION ADMINISTRATION</div><h1>{page === 'overview' ? 'Your organization, in sync.' : page === 'people' ? 'Good people. Connected teams.' : page === 'departments' ? 'A place for every team.' : page === 'access' ? 'The right access, for everyone.' : 'Every change, accounted for.'}</h1><p>{page === 'overview' ? 'A clear view of your people, departments and responsibilities.' : page === 'people' ? 'Manage accounts, department memberships and reporting relationships.' : page === 'departments' ? 'Build your organization around the teams that make it work.' : page === 'access' ? 'System access and department responsibilities are managed separately.' : 'A record of the organization updates made by administrators.'}</p></div>
-          <div className="heading-actions">{page === 'people' && <button className="btn btn-secondary" onClick={exportPeople} disabled={loading || !filteredUsers.length}><ArrowDownToLine size={16} /> Export</button>}{['overview', 'people'].includes(page) && <button className="btn btn-primary" onClick={() => editUser(null)}><Plus size={18} /> Add person</button>}{page === 'departments' && <button className="btn btn-primary" onClick={() => editDepartment(null)}><Plus size={18} /> Add department</button>}</div>
+        <div className="page-heading"><div><div className="eyebrow">ORGANIZATION ADMINISTRATION</div><h1>{page === 'overview' ? 'Your organization, in sync.' : page === 'people' ? 'Good people. Connected teams.' : page === 'departments' ? 'A place for every team.' : page === 'reporting' ? 'Department reporting' : page === 'access' ? 'The right access, for everyone.' : 'Every change, accounted for.'}</h1><p>{page === 'overview' ? 'A clear view of your people, departments and responsibilities.' : page === 'people' ? 'Manage accounts, department memberships and reporting relationships.' : page === 'departments' ? 'Build your organization around the teams that make it work.' : page === 'reporting' ? 'View the reporting chart and assign managers within a department.' : page === 'access' ? 'System access and department responsibilities are managed separately.' : 'A record of the organization updates made by administrators.'}</p></div>
+          <div className="heading-actions">{page === 'people' && <button className="btn btn-secondary" onClick={exportPeople} disabled={loading || !filteredUsers.length}><ArrowDownToLine size={16} /> Export</button>}{['overview', 'people'].includes(page) && <button className="btn btn-primary" onClick={() => editUser(null)}><Plus size={18} /> Add person</button>}{page === 'departments' && <RouteLink className="btn btn-secondary" href="/admin/reporting"><Network size={18} /> Reporting Structure</RouteLink>}{page === 'departments' && <button className="btn btn-primary" onClick={() => editDepartment(null)}><Plus size={18} /> Add department</button>}</div>
         </div>
         {loadError && <div className="load-error"><ErrorBox error={loadError} /><button className="btn btn-secondary" onClick={() => refresh().catch(() => {})}>Retry loading</button></div>}
         {loading ? <div className="content-loading"><LoaderCircle className="spin" /><p>Loading your organization…</p></div> : <>
@@ -247,17 +278,20 @@ function Workspace({ session, onSession, page, onPage }) {
               <SetupItem done={activeDepartments.length > 0 && !uncovered.length} label="Assign department heads" detail={uncovered.length ? `${uncovered.length} department${uncovered.length > 1 ? 's' : ''} need a HOF` : 'Department leadership connected'} onClick={() => { navigate('people'); }} />
               <button className="setup-link" onClick={() => setModal({ kind: 'help' })}>Explore the setup guide <ArrowUpRight size={16} /></button>
             </section></div>
-            <section className="panel people-panel"><div className="panel-heading"><div><h2>Your people <span className="count-label">{data.users.length}</span></h2><p>A shared directory, with access that fits each person</p></div><button className="text-button" onClick={() => navigate('people')}>View directory <ArrowRight size={15} /></button></div><PeopleTable users={data.users.slice(0, 5)} data={data} onEdit={editUser} compact /><div className="table-footer"><span>Showing {Math.min(data.users.length, 5)} of {data.users.length} people</span><span className="subtle-note"><ShieldCheck size={13} /> Administration access is restricted</span></div></section>
+            <section className="panel people-panel"><div className="panel-heading"><div><h2>Your people <span className="count-label">{data.users.length}</span></h2><p>A shared directory, with access that fits each person</p></div><button className="text-button" onClick={() => navigate('people')}>View directory <ArrowRight size={15} /></button></div><PeopleTable users={data.users.slice(0, 5)} onEdit={editUser} compact /><div className="table-footer"><span>Showing {Math.min(data.users.length, 5)} of {data.users.length} people</span><span className="subtle-note"><ShieldCheck size={13} /> Administration access is restricted</span></div></section>
           </>}
-          {page === 'people' && <section className="panel"><div className="directory-tools"><div className="directory-tabs"><button className={statusFilter === 'all' ? 'selected' : ''} onClick={() => setStatusFilter('all')}>All people <span>{data.users.length}</span></button><button className={statusFilter === 'active' ? 'selected' : ''} onClick={() => setStatusFilter('active')}>Active</button><button className={statusFilter === 'inactive' ? 'selected' : ''} onClick={() => setStatusFilter('inactive')}>Inactive</button></div><label className="filter-select"><SlidersHorizontal size={16} /><select aria-label="Filter by department" value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)}><option value="all">All departments</option>{data.departments.map(d => <option value={d.id} key={d.id}>{d.name}</option>)}</select><ChevronDown size={13} /></label></div><PaginatedPeople users={filteredUsers} data={data} onEdit={editUser} filterKey={`${query}-${statusFilter}-${departmentFilter}`} /></section>}
-          {page === 'departments' && <><div className="section-toolbar"><span>{activeDepartments.length} active departments <span className="separator-dot">·</span> {data.memberships.length} department memberships</span><Badge tone="mint">MULTIPLE DEPARTMENTS PER PERSON</Badge></div><section className="panel"><DepartmentTable data={data} onEdit={editDepartment} /></section><div className="inline-info"><Network size={19} /><p>A person can lead or belong to more than one department. Add department responsibilities from their person profile.</p><button className="text-button" onClick={() => navigate('people')}>Manage people <ArrowRight size={15} /></button></div></>}
+          {page === 'people' && <section className="panel"><div className="directory-tools"><div className="directory-tabs"><button className={statusFilter === 'all' ? 'selected' : ''} onClick={() => setStatusFilter('all')}>All people <span>{data.users.length}</span></button><button className={statusFilter === 'active' ? 'selected' : ''} onClick={() => setStatusFilter('active')}>Active</button><button className={statusFilter === 'inactive' ? 'selected' : ''} onClick={() => setStatusFilter('inactive')}>Inactive</button></div><label className="filter-select"><SlidersHorizontal size={16} /><select aria-label="Filter by department" value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)}><option value="all">All departments</option>{data.departments.map(d => <option value={d.id} key={d.id}>{d.name}</option>)}</select><ChevronDown size={13} /></label></div><PaginatedPeople users={filteredUsers} onEdit={editUser} onRemove={user => setModal({ kind: 'remove', user })} currentUserId={session.id} filterKey={`${query}-${statusFilter}-${departmentFilter}`} /></section>}
+          {page === 'departments' && <><div className="section-toolbar"><span>{activeDepartments.length} active departments <span className="separator-dot">·</span> {data.memberships.length} department memberships</span><Badge tone="mint">MULTIPLE DEPARTMENTS PER PERSON</Badge></div><section className="panel"><DepartmentTable data={data} onEdit={editDepartment} onRemove={department => setModal({ kind: 'remove', department })} /></section><div className="inline-info"><Network size={19} /><p>A person can lead or belong to more than one department. Add department responsibilities from their person profile.</p><button className="text-button" onClick={() => navigate('people')}>Manage people <ArrowRight size={15} /></button></div></>}
+          {page === 'reporting' && <DepartmentReporting data={data} onSaved={savedReporting} />}
           {page === 'access' && <AccessView data={data} onManage={() => navigate('people')} />}
           {page === 'activity' && <section className="panel activity-panel"><div className="panel-heading"><div><h2>Organization activity</h2><p>The latest {data.activity.length} recorded updates</p></div><Badge tone="mint">AUDIT HISTORY</Badge></div><ActivityList data={data} /></section>}
           <footer className="workspace-footer"><span><span className="footer-dot" /> CPSTL Performance Management</span><span>Ceylon Petroleum Storage Terminals Limited</span></footer>
         </>}
       </main>
     </div>
-    {modal && <Modal title={modal.kind === 'user' ? (modal.user ? 'Edit person' : 'Add a person') : modal.kind === 'department' ? (modal.department ? 'Edit department' : 'Create a department') : 'Your organization setup guide'} subtitle={modal.kind === 'user' ? 'Connect a person to your organization and the right responsibilities.' : modal.kind === 'department' ? 'Give your team a name, a home and a clear identity.' : 'A few simple steps to build a connected organization.'} onClose={() => setModal(null)}>
+    {modal?.kind === 'remove' && <RemoveRecordDialog record={modal.user || modal.department} department={!!modal.department}
+      onClose={() => setModal(null)} onRemoved={saved} />}
+    {modal && modal.kind !== 'remove' && <Modal title={modal.kind === 'user' ? (modal.user ? 'Edit person' : 'Add a person') : modal.kind === 'department' ? (modal.department ? 'Edit department' : 'Create a department') : 'Your organization setup guide'} subtitle={modal.kind === 'user' ? 'Connect a person to your organization and the right responsibilities.' : modal.kind === 'department' ? 'Give your team a name, a home and a clear identity.' : 'A few simple steps to build a connected organization.'} onClose={() => setModal(null)}>
       {modal.kind === 'user' ? <UserForm user={modal.user} data={data} session={session} onClose={() => setModal(null)} onSaved={saved} /> : modal.kind === 'department' ? <DepartmentForm department={modal.department} onClose={() => setModal(null)} onSaved={saved} /> : <HelpContent onClose={() => setModal(null)} />}
     </Modal>}
     {toast && <div className="toast" role="status"><CheckCircle2 size={18} /><span>{toast}</span><button className="icon-button" aria-label="Dismiss notification" onClick={() => setToast('')}><X size={15} /></button></div>}
@@ -268,26 +302,86 @@ function SetupItem({ done, label, detail, onClick }) {
   return <button className="setup-item" onClick={onClick}><span className={`setup-check ${done ? 'done' : ''}`}>{done ? <Check size={13} /> : <span />}</span><span><strong>{label}</strong><small>{detail}</small></span><ChevronRight size={15} /></button>;
 }
 
-function DepartmentTable({ data, onEdit, limit }) {
+function DepartmentTable({ data, onEdit, onRemove, limit }) {
   const departments = limit ? data.departments.filter(x => x.is_active).slice(0, limit) : data.departments;
   if (!departments.length) return <Empty icon={Building2} title="A home for your teams" text="Create your first department, then connect its people and leadership." action={<button className="btn btn-primary" onClick={() => onEdit(null)}><Plus size={16} /> Add department</button>} />;
   return <div className="table-scroll"><table className="department-table"><thead><tr><th>Department</th><th>Head of function</th><th>People</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{departments.map(d => {
     const heads = data.memberships.filter(m => idEquals(m.department_id, d.id) && m.responsibility === 'hof').map(m => userById(data, m.user_id)).filter(u => u?.is_active);
-    return <tr key={d.id}><td><div className="department-name"><span className="department-icon" style={{ color: d.color, background: `${d.color}13` }}><Building2 size={20} /></span><span><strong>{d.name}</strong><small>{d.code}</small></span></div></td><td>{heads.length ? <div className="head-name"><Avatar name={heads[0].name} small index={d.id} /><span>{heads.map(h => h.name).join(', ')}</span></div> : <span className="unassigned">Not assigned</span>}</td><td><span className="people-count"><Users size={14} />{memberCount(data, d.id)}</span></td><td><Badge tone={d.is_active ? 'mint' : 'neutral'}>{d.is_active ? 'Active' : 'Archived'}</Badge></td><td><button className="icon-button row-edit" title={`Edit ${d.name}`} aria-label={`Edit ${d.name}`} onClick={() => onEdit(d)}><Pencil size={15} /></button></td></tr>;
+    return <tr key={d.id}><td><div className="department-name"><span className="department-icon" style={{ color: d.color, background: `${d.color}13` }}><Building2 size={20} /></span><span><strong>{d.name}</strong><small>{d.code}</small></span></div></td><td>{heads.length ? <div className="head-name"><Avatar name={heads[0].name} small index={d.id} /><span>{heads.map(h => h.name).join(', ')}</span></div> : <span className="unassigned">Not assigned</span>}</td><td><span className="people-count"><Users size={14} />{memberCount(data, d.id)}</span></td><td><Badge tone={d.is_active ? 'mint' : 'neutral'}>{d.is_active ? 'Active' : 'Archived'}</Badge></td><td><div style={{ display: 'flex', gap: 4 }}><button className="icon-button row-edit" title={`Edit ${d.name}`} aria-label={`Edit ${d.name}`} onClick={() => onEdit(d)}><Pencil size={15} /></button>
+      {onRemove && <button className="icon-button danger" title={`Remove ${d.name}`} aria-label={`Remove ${d.name}`} onClick={() => onRemove(d)}><Trash2 size={15} /></button>}
+    </div></td></tr>;
   })}</tbody></table></div>;
 }
 
-function PeopleTable({ users, data, onEdit, compact = false }) {
+function PeopleTable({ users, onEdit, onRemove, currentUserId, compact = false }) {
   if (!users.length) return <Empty title="No people found" text="Try a different search or filter, or add a person to your organization." />;
-  return <div className="table-scroll"><table className="people-table"><thead><tr><th>Name</th><th>Department & responsibility</th><th>System access</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{users.map((u, i) => <tr key={u.id}><td><div className="person-name"><Avatar name={u.name} index={i} /><span><strong>{u.name}</strong><small>{compact ? u.designation : `${u.employee_number} · ${u.designation}`}</small>{!compact && <small className="person-email">{u.email}</small>}</span></div></td><td><div className="membership-tags">{memberOf(data, u.id).length ? memberOf(data, u.id).map(m => <span className="membership-tag" key={m.id}><span style={{ background: departmentById(data, m.department_id)?.color }} />{departmentById(data, m.department_id)?.code}<small>{m.responsibility === 'hof' ? 'HOF' : responsibilities[m.responsibility]}</small></span>) : <span className="unassigned">No department</span>}</div></td><td><span className={`role-label ${u.system_role === 'super_admin' ? 'role-admin' : ''}`}>{u.system_role === 'super_admin' && <ShieldCheck size={13} />}{roles[u.system_role]}</span></td><td><span className={`status-label ${!u.is_active ? 'inactive' : ''}`}><span />{u.is_active ? 'Active' : 'Inactive'}</span></td><td><button className="icon-button row-edit" title={`Edit ${u.name}`} aria-label={`Edit ${u.name}`} onClick={() => onEdit(u)}><Pencil size={15} /></button></td></tr>)}</tbody></table></div>;
+  return <div className="table-scroll">
+    <table className="people-table">
+      <thead><tr><th>Name</th><th>Designation</th><th>System access</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
+      <tbody>{users.map((user, index) => <tr key={user.id}>
+        <td><div className="person-name">
+          <Avatar name={user.name} index={index} />
+          <span>
+            <strong>{user.name}</strong>
+            <small>{[!compact && user.employee_number, user.grade && `Grade ${user.grade}`].filter(Boolean).join(' · ')}</small>
+            {!compact && <small className="person-email">{user.email.endsWith('@pending.cpstl.invalid') ? 'Work email pending' : user.email}</small>}
+          </span>
+        </div></td>
+        <td>{user.designation || '—'}</td>
+        <td><span className={`role-label ${user.system_role === 'super_admin' ? 'role-admin' : ''}`}>{user.system_role === 'super_admin' && <ShieldCheck size={13} />}{roles[user.system_role]}</span></td>
+        <td><span className={`status-label ${!user.is_active ? 'inactive' : ''}`}><span />{user.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td><div style={{ display: 'flex', gap: 4 }}>
+          <button className="icon-button row-edit" title={`Edit ${user.name}`} aria-label={`Edit ${user.name}`} onClick={() => onEdit(user)}><Pencil size={15} /></button>
+          {onRemove && !idEquals(user.id, currentUserId) && <button className="icon-button danger" title={`Remove ${user.name}`} aria-label={`Remove ${user.name}`} onClick={() => onRemove(user)}><Trash2 size={15} /></button>}
+        </div></td>
+      </tr>)}</tbody>
+    </table>
+  </div>;
 }
 
-function PaginatedPeople({ users, data, onEdit, filterKey }) {
+function PaginatedPeople({ users, onEdit, onRemove, currentUserId, filterKey }) {
   const [page, setPage] = useState(0);
   useEffect(() => setPage(0), [filterKey, users.length]);
   const pages = Math.max(1, Math.ceil(users.length / 8));
   const safePage = Math.min(page, pages - 1);
-  return <><PeopleTable users={users.slice(safePage * 8, safePage * 8 + 8)} data={data} onEdit={onEdit} /><div className="table-footer"><span>{users.length ? `${safePage * 8 + 1}–${Math.min(safePage * 8 + 8, users.length)}` : '0'} of {users.length} people</span><div className="pagination"><button className="icon-button" aria-label="Previous page" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}><ChevronLeft size={17} /></button><span>Page {safePage + 1} of {pages}</span><button className="icon-button" aria-label="Next page" disabled={safePage >= pages - 1} onClick={() => setPage(safePage + 1)}><ChevronRight size={17} /></button></div></div></>;
+  return <><PeopleTable users={users.slice(safePage * 8, safePage * 8 + 8)} onEdit={onEdit} onRemove={onRemove} currentUserId={currentUserId} /><div className="table-footer"><span>{users.length ? `${safePage * 8 + 1}–${Math.min(safePage * 8 + 8, users.length)}` : '0'} of {users.length} people</span><div className="pagination"><button className="icon-button" aria-label="Previous page" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}><ChevronLeft size={17} /></button><span>Page {safePage + 1} of {pages}</span><button className="icon-button" aria-label="Next page" disabled={safePage >= pages - 1} onClick={() => setPage(safePage + 1)}><ChevronRight size={17} /></button></div></div></>;
+}
+
+function RemoveRecordDialog({ record, department, onClose, onRemoved }) {
+  const removing = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const label = department ? 'Remove department' : 'Remove person';
+  async function remove() {
+    if (removing.current) return;
+    removing.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await request(`/admin/${department ? 'departments' : 'users'}/${record.id}`, { method: 'DELETE' });
+      await onRemoved(result.message);
+    } catch (err) {
+      setError(err);
+    } finally {
+      removing.current = false;
+      setBusy(false);
+    }
+  }
+  return <Modal title={`${label}?`} subtitle={[record.name, department ? record.code : record.employee_number].filter(Boolean).join(' · ')}
+    onClose={() => { if (!removing.current) onClose(); }}>
+    <div className="modal-body">
+      <ErrorBox error={error} />
+      <p className="confirm-copy">{department
+        ? 'This permanently removes the department. Move its people assignments first. Departments linked to saved work or reporting records cannot be removed.'
+        : 'This permanently removes the account and its department memberships. To suspend sign-in and keep the account, set its status to Inactive from Edit person.'}</p>
+    </div>
+    <div className="modal-footer">
+      <button className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" disabled={busy} onClick={remove}>
+        {busy ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />} {busy ? 'Removing…' : label}
+      </button>
+    </div>
+  </Modal>;
 }
 
 function ActivityList({ data }) {
@@ -306,7 +400,7 @@ function AccessView({ data, onManage }) {
 }
 
 function UserForm({ user, data, session, onClose, onSaved }) {
-  const [form, setForm] = useState(() => user ? { ...user, password: '', memberships: memberOf(data, user.id).map(m => ({ department_id: String(m.department_id), responsibility: m.responsibility, manager_ids: data.reporting.filter(r => idEquals(r.user_id, user.id) && idEquals(r.department_id, m.department_id)).map(r => Number(r.manager_id)) })) } : { ...initialUser, memberships: [] });
+  const [form, setForm] = useState(() => user ? { ...user, password: '', memberships: memberOf(data, user.id).map(m => ({ department_id: String(m.department_id), responsibility: m.responsibility, responsibility_title: m.responsibility_title || '', manager_ids: data.reporting.filter(r => idEquals(r.user_id, user.id) && idEquals(r.department_id, m.department_id)).map(r => Number(r.manager_id)) })) } : { ...initialUser, memberships: [] });
   const [error, setError] = useState(null), [busy, setBusy] = useState(false);
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }));
   const updateMembership = (index, changes) => setForm(f => ({ ...f, memberships: f.memberships.map((m, i) => i === index ? { ...m, ...changes } : m) }));
@@ -322,16 +416,20 @@ function UserForm({ user, data, session, onClose, onSaved }) {
   return <form onSubmit={submit}><div className="modal-body"><ErrorBox error={error} /><div className="form-section-label">PERSONAL DETAILS</div><div className="form-grid">
     <Field label="Full name" required><input value={form.name} onChange={e => set('name', e.target.value)} maxLength={120} placeholder="e.g. Amali Perera" required /></Field>
     <Field label="Employee / EPF number" required><input value={form.employee_number || ''} onChange={e => set('employee_number', e.target.value.trim())} maxLength={40} placeholder="e.g. EMP012" required /></Field>
-    <Field label="Work email" required><input type="email" value={form.email} onChange={e => set('email', e.target.value.trim().toLowerCase())} maxLength={180} placeholder="name@organization.com" required /></Field>
+    <Field label="Work email" required hint={user?.email.endsWith('@pending.cpstl.invalid') ? 'Enter the work email and set an initial password before activating.' : undefined}><input type="email" value={form.email} onChange={e => set('email', e.target.value.trim().toLowerCase())} maxLength={180} placeholder="name@organization.com" required /></Field>
     <Field label="Designation" required hint="Your job title does not determine your system permissions."><input value={form.designation || ''} onChange={e => set('designation', e.target.value)} placeholder="e.g. CIO, DGM, Systems Executive" maxLength={120} required /></Field>
+    <Field label="Grade"><input value={form.grade || ''} onChange={e => set('grade', e.target.value)} placeholder="e.g. A5" maxLength={30} /></Field>
     <Field label="System access" required><select disabled={isSelf} value={form.system_role} onChange={e => set('system_role', e.target.value)}>{Object.entries(roles).map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></Field>
     <Field label="Account status"><select disabled={isSelf} value={String(form.is_active)} onChange={e => set('is_active', e.target.value === 'true')}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
     <Field label={user ? 'New password (optional)' : 'Initial password'} required={!user} hint={user ? 'Leave empty to keep the current password.' : 'At least 12 characters. Share it through your office’s approved channel.'}><input type="password" autoComplete="new-password" minLength={12} maxLength={128} value={form.password} onChange={e => set('password', e.target.value)} required={!user} /></Field>
-  </div><div className="form-section-header"><div><div className="form-section-label">DEPARTMENT RESPONSIBILITIES</div><p>Add one or more departments. Choose reporting managers within each department.</p></div><button className="btn btn-secondary btn-small" type="button" disabled={form.memberships.length >= data.departments.filter(d => d.is_active).length} onClick={() => set('memberships', [...form.memberships, { department_id: '', responsibility: 'employee', manager_ids: [] }])}><Plus size={15} /> Add department</button></div>
+  </div><div className="form-section-header"><div><div className="form-section-label">DEPARTMENT RESPONSIBILITIES</div><p>Add one or more departments. Choose reporting managers within each department.</p></div><button className="btn btn-secondary btn-small" type="button" disabled={form.memberships.length >= data.departments.filter(d => d.is_active).length} onClick={() => set('memberships', [...form.memberships, { department_id: '', responsibility: 'employee', responsibility_title: '', manager_ids: [] }])}><Plus size={15} /> Add department</button></div>
+  <datalist id="department-responsibility-titles">{responsibilityTitles.map(title => <option key={title} value={title} />)}</datalist>
   {!form.memberships.length && <div className="membership-empty"><Building2 size={20} /><span>No department memberships yet. You can add them now or later.</span></div>}
   {form.memberships.map((m, i) => {
     const leaders = data.memberships.filter(x => idEquals(x.department_id, m.department_id) && ['hof', 'manager'].includes(x.responsibility) && !idEquals(x.user_id, user?.id)).map(x => userById(data, x.user_id)).filter(u => u?.is_active);
-    return <div className="membership-editor" key={i}><div className="membership-editor-top"><span>Department {i + 1}</span><button type="button" className="icon-button danger" aria-label={`Remove department ${i + 1}`} onClick={() => set('memberships', form.memberships.filter((_, index) => index !== i))}><Trash2 size={16} /></button></div><div className="form-grid"><Field label="Department" required><select value={m.department_id} required onChange={e => updateMembership(i, { department_id: e.target.value, manager_ids: [] })}><option value="">Select department</option>{data.departments.filter(d => d.is_active && (!form.memberships.some((other, index) => index !== i && idEquals(other.department_id, d.id)))).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field><Field label="Responsibility" required><select value={m.responsibility} onChange={e => updateMembership(i, { responsibility: e.target.value })}>{Object.entries(responsibilities).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></Field></div><div className="reporting-label">Reports to <small>Optional · select all that apply</small></div><div className="manager-options">{leaders.length ? leaders.map(leader => <label key={leader.id} className="manager-option"><input type="checkbox" checked={m.manager_ids.includes(leader.id)} onChange={e => updateMembership(i, { manager_ids: e.target.checked ? [...m.manager_ids, leader.id] : m.manager_ids.filter(id => id !== leader.id) })} /><Avatar name={leader.name} small /><span>{leader.name}</span></label>) : <small>{m.department_id ? 'No other active HOF or manager in this department yet.' : 'Select a department to see its managers.'}</small>}</div></div>;
+    return <div className="membership-editor" key={i}><div className="membership-editor-top"><span>Department {i + 1}</span><button type="button" className="icon-button danger" aria-label={`Remove department ${i + 1}`} onClick={() => set('memberships', form.memberships.filter((_, index) => index !== i))}><Trash2 size={16} /></button></div><div className="form-grid"><Field label="Department" required><select value={m.department_id} required onChange={e => updateMembership(i, { department_id: e.target.value, responsibility_title: '', manager_ids: [] })}><option value="">Select department</option>{data.departments.filter(d => d.is_active && (!form.memberships.some((other, index) => index !== i && idEquals(other.department_id, d.id)))).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field><Field label="System responsibility" required><select value={m.responsibility} onChange={e => updateMembership(i, { responsibility: e.target.value })}>{Object.entries(responsibilities).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></Field>
+      <Field label="Responsibility title" hint="Choose a suggested title or enter the title used in this department."><input list="department-responsibility-titles" maxLength={120} value={m.responsibility_title} onChange={e => updateMembership(i, { responsibility_title: e.target.value })} placeholder="e.g. Head of Data Center" /></Field>
+    </div><div className="reporting-label">Reports to <small>Optional · select all that apply</small></div><div className="manager-options">{leaders.length ? leaders.map(leader => <label key={leader.id} className="manager-option"><input type="checkbox" checked={m.manager_ids.includes(leader.id)} onChange={e => updateMembership(i, { manager_ids: e.target.checked ? [...m.manager_ids, leader.id] : m.manager_ids.filter(id => id !== leader.id) })} /><Avatar name={leader.name} small /><span>{leader.name}</span></label>) : <small>{m.department_id ? 'No other active HOF or manager in this department yet.' : 'Select a department to see its managers.'}</small>}</div></div>;
   })}
   <div className="form-note"><ShieldCheck size={16} /><span>System administrators manage the organization. Plan editors manage performance plans. HOFs can view their published plans.</span></div></div><div className="modal-footer"><button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <Check size={17} />}{user ? 'Save changes' : 'Add person'}</button></div></form>;
 }

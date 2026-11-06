@@ -79,8 +79,19 @@ class HofWorkController extends Controller
         $snapshot = DB::table('performance_plan_versions')->where('plan_id', $plan->id)
             ->where('version', $plan->published_revision)->value('snapshot');
         $document = json_decode($snapshot ?? '{}', true);
+        $hofDepartments = $document['hof_department_ids'] ?? null;
+        if (! empty($document['excel_source'])) {
+            $hofDepartments = DB::table('department_memberships as m')
+                ->join('departments as d', 'd.id', '=', 'm.department_id')->join('users as u', 'u.id', '=', 'm.user_id')
+                ->where('m.user_id', $plan->owner_id)->where('m.responsibility', 'hof')
+                ->where('d.is_active', true)->where('u.is_active', true)->where('u.system_role', 'member')
+                ->pluck('m.department_id')->map(fn ($id) => (int) $id)->all();
+        }
         $rows = [];
         foreach ($document['kpas'] ?? [] as $kpa) {
+            if ($hofDepartments !== null && ! in_array($kpa['department_id'], $hofDepartments, true)) {
+                continue;
+            }
             foreach ($kpa['kpis'] as $kpi) {
                 foreach ($kpi['activities'] as $activity) {
                     $source = [

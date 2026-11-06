@@ -8,3 +8,44 @@
 .hof-reviewers-page { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
 .hof-reviewers-page > .panel { margin-bottom: 20px; }
 
+.excel-employee-picker {
+  border: 0;
+  margin: 0 0 18px;
+  min-width: 0;
+  padding: 0;
+}
+.excel-employee-picker legend {
+  color: #243650;
+  font-weight: 650;
+  padding: 0;
+}
+.excel-employee-picker > p {
+  color: #536c8e;
+  font-size: 12px;
+  margin: 6px 0 10px;
+}
+.excel-employee-list {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 2px;
+}
+.excel-employee-option {
+  min-height: 44px;
+}
+.excel-employee-option:has(input:disabled) {
+  cursor: default;
+}
+.excel-employee-detail {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.excel-employee-detail small {
+  color: #536c8e;
+}
+
+.plan-row-actions{display:flex;align-items:center;gap:6px}

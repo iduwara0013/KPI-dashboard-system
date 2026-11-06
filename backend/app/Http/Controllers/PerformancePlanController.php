@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Http\Middleware\RequirePlanningAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use stdClass;
@@ -15,12 +17,7 @@ class PerformancePlanController extends Controller
     public function workspace(Request $request): JsonResponse
     {
         $editor = RequirePlanningAccess::canEdit($request->user());
-        $memberships = DB::table('department_memberships')
-            ->join('departments', 'departments.id', '=', 'department_memberships.department_id')
-            ->join('users', 'users.id', '=', 'department_memberships.user_id')
-            ->where('responsibility', 'hof')->where('departments.is_active', true)->where('users.is_active', true)
-            ->when(! $editor, fn ($query) => $query->where('user_id', $request->user()->id))
-            ->select('user_id', 'department_id')->get();
+        $memberships = $this->ownerMemberships($editor ? null : $request->user()->id);
         $ownerIds = $memberships->pluck('user_id')->unique();
         $plans = DB::table('performance_plans')
             ->when(! $editor, fn ($query) => $query->where('owner_id', $request->user()->id)->whereNotNull('published_revision'))
@@ -67,21 +64,27 @@ class PerformancePlanController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        return $this->createDraft($request, $request->all());
+    }
+
+    public function createDraft(Request $request, array $document, ?array $excelSource = null): JsonResponse
+    {
         $this->requireEditor($request);
-        $data = $this->validatedDocument($request);
-        $id = DB::transaction(function () use ($request, $data): int {
+        $data = $this->validatedDocument($document);
+        $id = DB::transaction(function () use ($request, $data, $excelSource): int {
             DB::table('users')->where('id', $data['owner_id'])->lockForUpdate()->first();
             if (DB::table('performance_plans')->where('code', $data['code'])->exists()) {
                 throw ValidationException::withMessages(['code' => 'This plan ID already exists.']);
             }
             if (DB::table('performance_plans')->where('owner_id', $data['owner_id'])->where('year', $data['year'])->exists()) {
-                throw ValidationException::withMessages(['owner_id' => 'This HOF already has a plan for this year. Add all departments to that personal plan.']);
+                throw ValidationException::withMessages(['owner_id' => 'This person already has a plan for this year. Open the existing plan to review it.']);
             }
             $this->validateOwnership($data);
             $id = DB::table('performance_plans')->insertGetId([
                 'code' => $data['code'], 'title' => $data['title'], 'owner_id' => $data['owner_id'],
                 'created_by' => $request->user()->id, 'year' => $data['year'], 'status' => 'draft',
                 'revision' => 1, 'created_at' => now(), 'updated_at' => now(),
+                'excel_source' => $excelSource ? json_encode($excelSource, JSON_THROW_ON_ERROR) : null,
             ]);
             $changes = $this->saveItems($id, $data);
             $this->recordVersion($request, $id, 'created', $changes);
@@ -96,12 +99,13 @@ class PerformancePlanController extends Controller
     {
         $this->requireEditor($request);
         $this->findAuthorized($request, $plan);
-        $data = $this->validatedDocument($request, true);
+        $data = $this->validatedDocument($request->all(), true);
         DB::transaction(function () use ($request, $plan, $data): void {
             $record = DB::table('performance_plans')->where('id', $plan)->lockForUpdate()->first();
+            abort_unless($record, 404, 'Plan not found.');
             abort_unless((int) $record->revision === (int) $data['revision'], 409, 'Someone changed this plan. Reload it before saving again.');
             if ($record->code !== $data['code'] || (int) $record->owner_id !== $data['owner_id'] || (int) $record->year !== $data['year']) {
-                throw ValidationException::withMessages(['code' => 'The plan ID, HOF and year cannot change after creation.']);
+                throw ValidationException::withMessages(['code' => 'The plan ID, owner and year cannot change after creation.']);
             }
             $this->validateOwnership($data);
             $changes = $this->saveItems($plan, $data);
@@ -132,7 +136,7 @@ class PerformancePlanController extends Controller
             abort_unless((int) $record->revision === (int) $request->integer('revision'), 409, 'Someone changed this plan. Reload it before publishing.');
             abort_if($record->status === 'published', 409, 'This version is already published.');
             $document = $this->document($record);
-            $this->validateOwnership($document);
+            $memberships = $this->validateOwnership($document);
             $issues = $this->publicationIssues($document);
             if ($issues !== []) {
                 throw ValidationException::withMessages(['publication' => $issues]);
@@ -141,10 +145,45 @@ class PerformancePlanController extends Controller
                 'status' => 'published', 'revision' => $record->revision + 1,
                 'published_revision' => $record->revision + 1, 'published_at' => now(), 'updated_at' => now(),
             ]);
-            $this->recordVersion($request, $plan, 'published', []);
+            $metadata = $record->excel_source === null ? [
+                'hof_department_ids' => $memberships->where('responsibility', 'hof')->pluck('department_id')->map(fn ($id) => (int) $id)->all(),
+            ] : [];
+            $this->recordVersion($request, $plan, 'published', [], $metadata);
         });
 
         return response()->json(['id' => $plan]);
+    }
+
+    public function destroy(Request $request, int $plan): JsonResponse
+    {
+        $this->requireEditor($request);
+        $data = $request->validate(['revision' => ['required', 'integer', 'min:1']]);
+
+        DB::transaction(function () use ($request, $plan, $data): void {
+            $record = DB::table('performance_plans')->where('id', $plan)->lockForUpdate()->first();
+            abort_unless($record, 404, 'Plan not found.');
+            abort_unless($record->status === 'draft' && $record->published_revision === null, 409,
+                'This plan has a published version and cannot be removed.');
+            abort_unless((int) $record->revision === (int) $data['revision'], 409,
+                'Someone changed this plan. Refresh the list before removing it.');
+
+            foreach (['activity', 'kpi', 'kpa'] as $kind) {
+                DB::table('performance_plan_items')->where('plan_id', $plan)->where('kind', $kind)->delete();
+            }
+            DB::table('performance_plan_versions')->where('plan_id', $plan)->delete();
+            DB::table('performance_plans')->where('id', $plan)->delete();
+
+            DB::table('admin_activity')->insert([
+                'actor_id' => $request->user()->id, 'action' => 'plan.removed', 'subject' => $record->code,
+                'before_data' => json_encode([
+                    'plan_id' => $plan, 'title' => $record->title, 'owner_id' => $record->owner_id,
+                    'year' => $record->year, 'revision' => $record->revision,
+                ], JSON_THROW_ON_ERROR),
+                'created_at' => now(),
+            ]);
+        });
+
+        return response()->json(['message' => 'Draft plan removed.']);
     }
 
     private function requireEditor(Request $request): void
@@ -162,9 +201,9 @@ class PerformancePlanController extends Controller
         return $record;
     }
 
-    private function validatedDocument(Request $request, bool $updating = false): array
+    private function validatedDocument(array $document, bool $updating = false): array
     {
-        $data = $request->validate([
+        $data = Validator::make($document, [
             'code' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
             'title' => ['required', 'string', 'max:180'],
             'owner_id' => ['required', 'integer', Rule::exists('users', 'id')->where('is_active', true)],
@@ -192,7 +231,7 @@ class PerformancePlanController extends Controller
             'kpas.*.kpis.*.activities.*.weight' => ['nullable', 'numeric', 'between:0,1'],
             'kpas.*.kpis.*.activities.*.due_date' => ['nullable', 'date_format:Y-m-d'],
             'kpas.*.kpis.*.activities.*.notes' => ['nullable', 'string', 'max:1000'],
-        ]);
+        ])->validate();
         $data['owner_id'] = (int) $data['owner_id'];
         $data['year'] = (int) $data['year'];
         $data['code'] = strtoupper($data['code']);
@@ -228,21 +267,30 @@ class PerformancePlanController extends Controller
         return $data;
     }
 
-    private function validateOwnership(array $document): void
+    private function ownerMemberships(?int $owner = null): Collection
     {
-        $allowed = DB::table('department_memberships')
+        return DB::table('department_memberships')
             ->join('departments', 'departments.id', '=', 'department_memberships.department_id')
             ->join('users', 'users.id', '=', 'department_memberships.user_id')
-            ->where('user_id', $document['owner_id'])->where('responsibility', 'hof')
-            ->where('departments.is_active', true)->where('users.is_active', true)->pluck('department_id')->map(fn ($id) => (int) $id)->all();
-        if ($allowed === []) {
-            throw ValidationException::withMessages(['owner_id' => 'Select an active HOF with an active department assignment.']);
+            ->where('users.system_role', 'member')->whereIn('responsibility', ['hof', 'manager', 'employee'])
+            ->where('departments.is_active', true)->where('users.is_active', true)
+            ->when($owner !== null, fn ($query) => $query->where('user_id', $owner))
+            ->get(['user_id', 'department_id', 'responsibility']);
+    }
+
+    private function validateOwnership(array $document): Collection
+    {
+        $memberships = $this->ownerMemberships($document['owner_id']);
+        if ($memberships->isEmpty()) {
+            throw ValidationException::withMessages(['owner_id' => 'Select an active person with an active department assignment.']);
         }
         foreach ($document['kpas'] as $kpa) {
-            if (! in_array((int) $kpa['department_id'], $allowed, true)) {
-                throw ValidationException::withMessages(['kpas' => 'Each KPA must belong to a department led by the selected HOF.']);
+            if (! $memberships->contains('department_id', $kpa['department_id'])) {
+                throw ValidationException::withMessages(['kpas' => 'Each KPA must belong to one of the plan owner’s active departments.']);
             }
         }
+
+        return $memberships;
     }
 
     private function publicationIssues(array $document): array
@@ -372,6 +420,7 @@ class PerformancePlanController extends Controller
             'id' => (int) $plan->id, 'code' => $plan->code, 'title' => $plan->title, 'owner_id' => (int) $plan->owner_id,
             'year' => (int) $plan->year, 'status' => $plan->status, 'revision' => (int) $plan->revision,
             'published_at' => $plan->published_at, 'kpas' => $kpas,
+            'excel_source' => $plan->excel_source ? json_decode($plan->excel_source, true) : null,
         ];
     }
 
@@ -387,15 +436,16 @@ class PerformancePlanController extends Controller
             'kpa_count' => count($document['kpas']), 'kpi_count' => $kpis->count(),
             'activity_count' => $kpis->sum(fn ($kpi) => count($kpi['activities'])),
             'weight_total' => array_sum(array_column($document['kpas'], 'weight')),
+            'imported' => $plan->excel_source !== null,
         ];
     }
 
-    private function recordVersion(Request $request, int $id, string $event, array $changes): void
+    private function recordVersion(Request $request, int $id, string $event, array $changes, array $metadata = []): void
     {
         $record = DB::table('performance_plans')->find($id);
         DB::table('performance_plan_versions')->insert([
             'plan_id' => $id, 'actor_id' => $request->user()->id, 'version' => $record->revision,
-            'event' => $event, 'snapshot' => json_encode($this->document($record)),
+            'event' => $event, 'snapshot' => json_encode([...$this->document($record), ...$metadata]),
             'changes' => json_encode($changes), 'created_at' => now(),
         ]);
         DB::table('admin_activity')->insert([

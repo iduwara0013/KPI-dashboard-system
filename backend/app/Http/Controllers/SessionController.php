@@ -13,8 +13,14 @@ class SessionController extends Controller
 {
     public function show(Request $request): JsonResponse
     {
+        $user = $request->user();
+
         return response()->json([
-            'user' => $request->user() ? [...$request->user()->toArray(), 'workspaces' => RequireDeliveryAccess::roles($request->user())] : null,
+            'user' => $user ? [
+                ...$user->toArray(),
+                'workspaces' => RequireDeliveryAccess::roles($user),
+                'can_view_plans' => RequirePlanningAccess::canView($user),
+            ] : null,
             'csrf_token' => csrf_token(),
         ]);
     }

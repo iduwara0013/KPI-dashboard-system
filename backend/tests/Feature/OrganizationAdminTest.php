@@ -49,9 +49,107 @@ class OrganizationAdminTest extends TestCase
         $this->postJson('/api/admin/users', $this->payload())->assertForbidden();
         $this->postJson('/api/admin/departments', [])->assertForbidden();
         $this->putJson('/api/admin/users/'.$member->id, [])->assertForbidden();
+        $this->deleteJson('/api/admin/users/'.$member->id)->assertForbidden();
         $this->putJson('/api/admin/departments/1', [])->assertForbidden();
+        $this->putJson('/api/admin/departments/1/reporting', [])->assertForbidden();
         $member->update(['system_role' => 'super_admin', 'is_active' => false]);
         $this->actingAs($member)->getJson('/api/admin/workspace')->assertForbidden();
+    }
+
+    public function test_admin_can_remove_an_unlinked_account_and_its_memberships(): void
+    {
+        $admin = $this->admin();
+        $member = User::factory()->create();
+        $department = $this->department();
+        $this->membership($member, $department, 'employee');
+        DB::table('reporting_relationships')->insert([
+            'department_id' => $department, 'user_id' => $member->id, 'manager_id' => $admin->id,
+        ]);
+        $this->actingAs($admin)->deleteJson('/api/admin/users/'.$admin->id)->assertUnprocessable();
+        $this->deleteJson('/api/admin/users/'.$member->id)->assertOk();
+        $this->assertDatabaseMissing('users', ['id' => $member->id]);
+        $this->assertDatabaseMissing('department_memberships', ['user_id' => $member->id]);
+        $this->assertDatabaseMissing('reporting_relationships', ['user_id' => $member->id]);
+        $this->assertDatabaseHas('admin_activity', ['actor_id' => $admin->id, 'action' => 'user.removed']);
+    }
+
+    public function test_admin_can_only_remove_a_department_without_related_records(): void
+    {
+        $department = $this->department();
+        $member = User::factory()->create(['system_role' => 'member']);
+        $manager = User::factory()->create();
+        $url = '/api/admin/departments/'.$department;
+        $this->actingAs($member)->deleteJson($url)->assertForbidden();
+        $this->actingAs($this->admin());
+
+        $this->membership($member, $department, 'employee');
+        $this->deleteJson($url)->assertConflict();
+        $this->assertDatabaseHas('department_memberships', ['department_id' => $department, 'user_id' => $member->id]);
+        DB::table('department_memberships')->where('department_id', $department)->delete();
+        DB::table('reporting_relationships')->insert([
+            'department_id' => $department, 'user_id' => $member->id, 'manager_id' => $manager->id,
+        ]);
+        $this->deleteJson($url)->assertConflict();
+        DB::table('reporting_relationships')->where('department_id', $department)->delete();
+
+        $this->deleteJson($url)->assertOk();
+        $this->assertDatabaseMissing('departments', ['id' => $department]);
+        $this->assertDatabaseHas('admin_activity', ['action' => 'department.removed', 'subject' => 'IT department']);
+    }
+
+    public function test_account_removal_preserves_direct_reports_and_saved_history(): void
+    {
+        $admin = $this->admin();
+        $manager = User::factory()->create();
+        $member = User::factory()->create();
+        $department = $this->department();
+        $this->membership($manager, $department);
+        $this->membership($member, $department, 'employee');
+        DB::table('reporting_relationships')->insert([
+            'department_id' => $department, 'user_id' => $member->id, 'manager_id' => $manager->id,
+        ]);
+        DB::table('admin_activity')->insert([
+            'actor_id' => $member->id, 'action' => 'work.assigned', 'subject' => 'Existing record',
+        ]);
+        $this->actingAs($admin)->deleteJson('/api/admin/users/'.$manager->id)->assertConflict();
+        $this->deleteJson('/api/admin/users/'.$member->id)->assertConflict();
+        $this->assertDatabaseHas('department_memberships', ['user_id' => $member->id]);
+        $this->assertDatabaseHas('reporting_relationships', ['user_id' => $member->id, 'manager_id' => $manager->id]);
+        $this->assertDatabaseHas('admin_activity', ['actor_id' => $member->id]);
+    }
+
+    public function test_department_reporting_validates_the_final_graph_and_rejects_stale_edits(): void
+    {
+        $department = $this->department();
+        $otherDepartment = $this->department('DIG');
+        $first = User::factory()->create(['is_active' => true]);
+        $second = User::factory()->create(['is_active' => true]);
+        $third = User::factory()->create(['is_active' => true]);
+        foreach ([$department, $otherDepartment] as $id) {
+            $this->membership($first, $id);
+            $this->membership($second, $id);
+        }
+        $this->membership($third, $department, 'employee');
+        foreach ([$department, $otherDepartment] as $id) {
+            DB::table('reporting_relationships')->insert(['department_id' => $id, 'user_id' => $second->id, 'manager_id' => $first->id]);
+        }
+        $url = '/api/admin/departments/'.$department.'/reporting';
+        $this->actingAs($this->admin());
+        $this->putJson($url, ['changes' => [
+            ['user_id' => $third->id, 'manager_ids' => [$first->id], 'expected_manager_ids' => []],
+            ['user_id' => $first->id, 'manager_ids' => [$second->id], 'expected_manager_ids' => []],
+        ]])->assertUnprocessable()->assertJsonValidationErrors('changes');
+        $this->assertDatabaseMissing('reporting_relationships', ['user_id' => $third->id]);
+
+        $change = ['changes' => [
+            ['user_id' => $first->id, 'manager_ids' => [$second->id], 'expected_manager_ids' => []],
+            ['user_id' => $second->id, 'manager_ids' => [], 'expected_manager_ids' => [$first->id]],
+        ]];
+        $this->putJson($url, $change)->assertOk()->assertJsonCount(1, 'links');
+        $this->putJson($url, $change)->assertConflict();
+        $this->assertDatabaseHas('reporting_relationships', ['department_id' => $department, 'user_id' => $first->id, 'manager_id' => $second->id]);
+        $this->assertDatabaseHas('reporting_relationships', ['department_id' => $otherDepartment, 'user_id' => $second->id, 'manager_id' => $first->id]);
+        $this->assertDatabaseHas('admin_activity', ['action' => 'department.reporting_updated']);
     }
 
     public function test_login_uses_a_session_and_logout_ends_it(): void
@@ -78,6 +176,23 @@ class OrganizationAdminTest extends TestCase
         $this->assertSame('user.created', $audit->action);
         $this->assertStringNotContainsString('password', $audit->after_data);
         $this->assertStringNotContainsString($payload['password'], $audit->after_data);
+    }
+
+    public function test_department_title_is_saved_and_preserved_by_edits_from_older_clients(): void
+    {
+        $department = $this->department();
+        $payload = $this->payload(['memberships' => [
+            ['department_id' => $department, 'responsibility' => 'manager', 'responsibility_title' => 'Head of Data Center', 'manager_ids' => []],
+        ]]);
+        $id = $this->actingAs($this->admin())->postJson('/api/admin/users', $payload)->assertCreated()->json('user.id');
+        unset($payload['memberships'][0]['responsibility_title']);
+        $this->putJson('/api/admin/users/'.$id, $payload)->assertOk();
+        $this->getJson('/api/admin/workspace')->assertOk()
+            ->assertJsonPath('memberships.0.responsibility_title', 'Head of Data Center')
+            ->assertJsonPath('memberships.0.responsibility', 'manager');
+        $payload['memberships'][0]['responsibility_title'] = null;
+        $this->putJson('/api/admin/users/'.$id, $payload)->assertOk();
+        $this->assertDatabaseHas('department_memberships', ['user_id' => $id, 'responsibility_title' => null]);
     }
 
     public function test_multiple_reporting_managers_and_same_manager_across_departments_are_supported(): void

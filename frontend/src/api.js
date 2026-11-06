@@ -38,18 +38,19 @@ export async function request(path, options = {}, retry = true) {
     await checkSessionIdentity();
   }
   let response;
+  const multipart = options.body instanceof FormData;
   try {
     response = await fetch(`/api${path}`, {
       ...options,
       credentials: 'same-origin',
       headers: {
         Accept: 'application/json',
-        'Content-Type': 'application/json',
+        ...(!multipart ? { 'Content-Type': 'application/json' } : {}),
         ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
         ...(!publicRequest && expectedIdentity ? { 'X-Workspace-User': expectedIdentity.id } : {}),
         ...options.headers,
       },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: multipart || options.body === undefined ? options.body : JSON.stringify(options.body),
     });
   } catch {
     throw new ApiError('The server could not be reached. Check that the Laravel API is running.');

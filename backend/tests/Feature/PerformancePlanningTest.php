@@ -113,6 +113,32 @@ class PerformancePlanningTest extends TestCase
         $this->getJson('/api/planning/workspace')->assertJsonCount(0, 'plans');
     }
 
+    public function test_editor_can_remove_an_unpublished_draft_and_create_a_replacement(): void
+    {
+        [$hof, $departments] = $this->hof();
+        $editor = $this->editor();
+        $payload = $this->payload($hof, $departments);
+        $this->actingAs($editor);
+        $id = $this->createPlan($payload);
+        $url = '/api/planning/plans/'.$id;
+
+        $this->actingAs($hof)->deleteJson($url, ['revision' => 1])->assertForbidden();
+        $this->actingAs($editor)->deleteJson($url, ['revision' => 2])->assertConflict();
+        $this->deleteJson($url, ['revision' => 1])->assertOk();
+        $this->getJson($url)->assertNotFound();
+        $this->assertDatabaseCount('performance_plan_items', 0);
+        $this->assertDatabaseCount('performance_plan_versions', 0);
+        $this->assertDatabaseHas('admin_activity', ['actor_id' => $editor->id, 'action' => 'plan.removed', 'subject' => $payload['code']]);
+
+        $replacement = '/api/planning/plans/'.$this->createPlan($payload);
+        $this->postJson($replacement.'/publish', ['revision' => 1])->assertOk();
+        $this->deleteJson($replacement, ['revision' => 2])->assertConflict();
+        $payload['title'] = 'Revised performance plan';
+        $this->putJson($replacement, [...$payload, 'revision' => 2])->assertOk();
+        $this->deleteJson($replacement, ['revision' => 3])->assertConflict();
+        $this->actingAs($hof)->getJson($replacement)->assertOk()->assertJsonPath('plan.status', 'published');
+    }
+
     public function test_expired_editor_session_can_reauthenticate_and_retry_draft_creation_once(): void
     {
         [$hof, $departments] = $this->hof();
@@ -149,6 +175,28 @@ class PerformancePlanningTest extends TestCase
         $payload['code'] = 'PLAN-2026-IT';
         $this->postJson('/api/planning/plans', $payload)->assertUnprocessable()->assertJsonValidationErrors('code');
         $this->assertDatabaseCount('performance_plans', 1);
+    }
+
+    public function test_editor_can_create_and_publish_a_manual_plan_for_a_department_member(): void
+    {
+        [$owner, $departments] = $this->hof();
+        DB::table('department_memberships')->where('user_id', $owner->id)
+            ->where('department_id', $departments[0])->update(['responsibility' => 'manager']);
+        DB::table('department_memberships')->where('user_id', $owner->id)
+            ->where('department_id', $departments[1])->update(['responsibility' => 'employee']);
+
+        $this->actingAs($this->editor())->getJson('/api/planning/workspace')->assertOk()
+            ->assertJsonPath('owners.0.id', $owner->id)->assertJsonCount(2, 'memberships');
+        $payload = $this->payload($owner, $departments);
+        $id = $this->createPlan([...$payload, 'kpas' => []]);
+        $url = '/api/planning/plans/'.$id;
+        $this->putJson($url, [...$payload, 'revision' => 1])->assertOk();
+        $this->postJson($url.'/publish', ['revision' => 2])->assertOk();
+
+        $this->actingAs($owner)->getJson($url)->assertOk()
+            ->assertJsonPath('plan.status', 'published')->assertJsonCount(2, 'plan.kpas');
+        $md = User::factory()->create(['system_role' => 'md', 'is_active' => true]);
+        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertOk()->assertJsonCount(0, 'activities');
     }
 
     public function test_each_weight_group_and_required_kpi_fields_are_validated_independently(): void

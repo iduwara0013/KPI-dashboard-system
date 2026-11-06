@@ -3,7 +3,7 @@ import OrganizationChart from './OrganizationChart.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, ChevronRight, CircleHelp,
-  ClipboardList, FileCheck2, FilePenLine, FolderTree, History, LayoutDashboard,
+  ClipboardList, FileCheck2, FilePenLine, FileSpreadsheet, FolderTree, History, LayoutDashboard,
   LoaderCircle, LogOut, Menu, Plus, Save, Search, Send, ShieldCheck, Target,
   Trash2, Users, X,
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import { Avatar, Badge, Brand, Empty, ErrorBox, Field, Modal, MonthlyKpiLink, Ro
 import './planning.css';
 import PersonalAllocationWorkspace from './PersonalAllocationWorkspace.jsx';
 import HofReviewers from './HofReviewers.jsx';
+import ExcelPlanImport from './ExcelPlanImport.jsx';
 import { workspacePath } from './workspaceRoutes.js';
 
 const emptyWorkspace = { plans: [], owners: [], departments: [], memberships: [], can_edit: false };
@@ -21,6 +22,8 @@ const percent = value => value === null || value === undefined || value === '' ?
 const sumWeights = rows => rows.reduce((sum, row) => sum + Number(row.weight || 0), 0);
 const ownerOf = (data, id) => data.owners.find(user => sameId(user.id, id));
 const departmentOf = (data, id) => data.departments.find(dept => sameId(dept.id, id));
+const departmentsForOwner = (data, ownerId) => data.departments.filter(dept =>
+  data.memberships.some(m => sameId(m.user_id, ownerId) && sameId(m.department_id, dept.id)));
 const dateLabel = value => value ? new Date(value.includes('Z') || value.includes('+') ? value : value.replace(' ', 'T') + 'Z').toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not published';
 const recent = value => value && Date.now() - new Date(value.replace(' ', 'T') + (value.includes('Z') ? '' : 'Z')).getTime() < 3 * 86400000;
 const newId = prefix => `${prefix}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
@@ -41,7 +44,7 @@ export default function PlanWorkspace({ session, onSession, page, onWork }) {
   const [toast, setToast] = useState('');
   const leaving = useRef(false);
   const editor = session.system_role === 'plan_editor';
-  const roleName = editor ? 'Performance plan editor' : 'Head of function';
+  const roleName = editor ? 'Performance plan editor' : session.designation || 'Team member';
 
   async function refresh() {
     setError(null);
@@ -92,7 +95,7 @@ export default function PlanWorkspace({ session, onSession, page, onWork }) {
   const drafts = data.plans.filter(plan => plan.status === 'draft');
   const kpiCount = data.plans.reduce((sum, plan) => sum + plan.kpi_count, 0);
   const years = [...new Set(data.plans.map(plan => plan.year))].sort((a, b) => b - a);
-  const canCreate = editor && data.owners.length > 0;
+  const canCreate = editor;
   if (page === 'allocations') return <PersonalAllocationWorkspace session={session} onBack={() => navigate('overview')} />;
   if (page === 'reviewers' && editor) return <HofReviewers onBack={() => navigate('overview')} />;
 
@@ -117,45 +120,102 @@ export default function PlanWorkspace({ session, onSession, page, onWork }) {
       <main>
         {error && <div className="load-error"><ErrorBox error={error} /><button className="btn btn-secondary" onClick={() => refresh().catch(() => {})}>Retry</button></div>}
         {loading || detailLoading ? <div className="content-loading"><LoaderCircle className="spin" /><p>Opening performance plans…</p></div> : detail ? <PlanEditor key={`${detail.plan.id}-${detail.plan.revision}`} detail={detail} data={data} onDirty={setDirty} onBack={() => navigate('plans')} onSaved={saved} onHistory={() => setModal({ kind: 'history' })} /> : <>
-          <div className="page-heading"><div><div className="eyebrow">{editor ? 'PERFORMANCE PLANNING' : 'PUBLISHED RESPONSIBILITIES'}</div><h1>{page === 'history' ? 'A clear record of every revision.' : editor ? 'Performance plans, connected.' : 'My performance plans'}</h1><p>{page === 'history' ? 'Choose a plan to review saved changes and publication history.' : editor ? 'Define KPAs, agree KPI targets and publish complete plans for your HOFs.' : 'Your published KPAs, KPI targets and supporting activities in one place.'}</p></div>{editor && page !== 'history' && <div className="heading-actions"><button className="btn btn-primary" onClick={() => setModal({ kind: 'create' })} disabled={!canCreate}><Plus size={18} /> Create plan</button></div>}</div>
-          {page === 'overview' && <><DashboardCharts title="Planning analytics" groupTitle="Plans by HOF" records={data.plans.map(p => ({ id: p.id, label: p.title, status: p.status === 'published' ? 'Published' : 'Draft', group: ownerOf(data, p.owner_id)?.name || 'Previous HOF' }))} /><details className="reporting-details"><summary>View organization reporting chart</summary><OrganizationChart /></details>
+          <div className="page-heading"><div><div className="eyebrow">{editor ? 'PERFORMANCE PLANNING' : 'PUBLISHED RESPONSIBILITIES'}</div><h1>{page === 'history' ? 'A clear record of every revision.' : editor ? 'Performance plans, connected.' : 'My performance plans'}</h1><p>{page === 'history' ? 'Choose a plan to review saved changes and publication history.' : editor ? 'Define KPAs, agree KPI targets and publish complete plans for your organization.' : 'Your published KPAs, KPI targets and supporting activities in one place.'}</p></div>{editor && page !== 'history' && <div className="heading-actions"><button className="btn btn-primary" onClick={() => setModal({ kind: 'create' })}><Plus size={18} /> Create plan</button></div>}</div>
+          {page === 'overview' && <><DashboardCharts title="Planning analytics" groupTitle="Plans by owner" records={data.plans.map(p => ({ id: p.id, label: p.title, status: p.status === 'published' ? 'Published' : 'Draft', group: ownerOf(data, p.owner_id)?.name || 'Previous owner' }))} /><details className="reporting-details"><summary>View organization reporting chart</summary><OrganizationChart /></details>
             <section className="stats-grid" aria-label="Planning summary">{[
-              [editor ? 'Personal plans' : 'Published plans', data.plans.length, editor ? 'Across your HOFs' : 'Available to you', FolderTree, 'mint'],
-              ['Published', published.length, 'Ready for HOFs to view', FileCheck2, 'blue'],
+              [editor ? 'Personal plans' : 'Published plans', data.plans.length, editor ? 'Across the organization' : 'Available to you', FolderTree, 'mint'],
+              ['Published', published.length, 'Available to plan owners', FileCheck2, 'blue'],
               [editor ? 'Draft plans' : 'Key result areas', editor ? drafts.length : data.plans.reduce((sum, p) => sum + p.kpa_count, 0), editor ? 'Being prepared or revised' : 'Defined in your plans', FilePenLine, 'sand'],
               ['KPI definitions', kpiCount, 'With agreed measurement fields', Target, 'lilac'],
             ].map(([label, value, caption, Icon, tone]) => <article className="stat" key={label}><div className="stat-top"><span>{label}</span><span className={`stat-icon ${tone}`}><Icon size={19} /></span></div><strong>{String(value).padStart(2, '0')}</strong><small><span className={`tiny-dot ${tone}`} />{caption}</small></article>)}</section>
-            {editor && <div className="planning-intro"><div><span className="planning-intro-icon"><ClipboardList size={24} /></span><div><h2>A complete plan starts with a clear allocation</h2><p>HOF responsibilities can span several departments. Their KPA weights still add up to one personal 100%.</p></div></div><button className="text-button" onClick={() => setModal({ kind: 'guide' })}>How planning works <ArrowRight size={16} /></button></div>}
+            {editor && <div className="planning-intro"><div><span className="planning-intro-icon"><ClipboardList size={24} /></span><div><h2>A complete plan starts with a clear allocation</h2><p>A plan can cover several departments. Its KPA weights add up to one personal 100%.</p></div></div><button className="text-button" onClick={() => setModal({ kind: 'guide' })}>How planning works <ArrowRight size={16} /></button></div>}
           </>}
-          {editor && !data.owners.length && <div className="form-note planning-owner-note"><Users size={20} /><span>No active HOF assignments were found. Ask a system administrator to give a person the Head of function responsibility in a department before creating a plan.</span></div>}
-          <section className="panel planning-list"><div className="panel-heading"><div><h2>{page === 'history' ? 'Plan records' : page === 'overview' ? 'Recent plans' : 'Performance plans'} <span className="count-label">{data.plans.length}</span></h2><p>{editor ? 'One HOF, one personal plan for each year' : 'Published versions only'}</p></div>{page === 'overview' && data.plans.length > 0 && <button className="text-button" onClick={() => navigate('plans')}>View all <ArrowRight size={15} /></button>}</div>
-            {page !== 'overview' && <div className="plan-filters"><label className="plan-search"><Search size={17} /><input aria-label="Search performance plans" placeholder="Search plans or HOFs…" value={query} onChange={e => setQuery(e.target.value)} /></label><select aria-label="Filter plans by year" value={year} onChange={e => setYear(e.target.value)}><option value="all">All years</option>{years.map(y => <option value={y} key={y}>{y}</option>)}</select>{editor && <select aria-label="Filter plans by status" value={status} onChange={e => setStatus(e.target.value)}><option value="all">All statuses</option><option value="draft">Draft</option><option value="published">Published</option></select>}</div>}
-            <PlanTable plans={page === 'overview' ? data.plans.slice(0, 5) : filtered} data={data} editor={editor} onOpen={id => openPlan(id, page === 'history')} onCreate={() => setModal({ kind: 'create' })} canCreate={canCreate} />
-          </section>
+          {editor && !data.owners.length && <div className="form-note planning-owner-note"><Users size={20} /><span>To create a plan, add an active person to an active department.</span></div>}
+          {page !== 'overview' && <section className="panel planning-list">
+            <div className="panel-heading"><div><h2>{page === 'history' ? 'Plan records' : 'Performance plans'} <span className="count-label">{data.plans.length}</span></h2><p>{editor ? 'One personal plan per person for each year' : 'Published versions only'}</p></div></div>
+            <div className="plan-filters"><label className="plan-search"><Search size={17} /><input aria-label="Search performance plans" placeholder="Search plans or owners…" value={query} onChange={e => setQuery(e.target.value)} /></label><select aria-label="Filter plans by year" value={year} onChange={e => setYear(e.target.value)}><option value="all">All years</option>{years.map(y => <option value={y} key={y}>{y}</option>)}</select>{editor && <select aria-label="Filter plans by status" value={status} onChange={e => setStatus(e.target.value)}><option value="all">All statuses</option><option value="draft">Draft</option><option value="published">Published</option></select>}</div>
+            <PlanTable plans={filtered} data={data} editor={editor} onOpen={id => openPlan(id, page === 'history')} onCreate={() => setModal({ kind: 'create' })} canCreate={canCreate}
+              onRemove={editor && page === 'plans' ? plan => setModal({ kind: 'remove', plan }) : undefined} />
+          </section>}
         </>}
         <footer className="workspace-footer"><span><span className="footer-dot" /> CPSTL Performance Management</span><span>Ceylon Petroleum Storage Terminals Limited</span></footer>
       </main>
     </div>
-    {modal?.kind === 'create' && <Modal title="Create a personal plan" subtitle="Choose the HOF and year. Add their departments and responsibilities in the plan." onClose={() => setModal(null)}><CreatePlanForm data={data} onClose={() => setModal(null)} onCreated={async id => { setModal(null); await saved(id, 'Draft plan created. Add its KPAs and targets.'); }} /></Modal>}
+    {modal?.kind === 'create' && <Modal title="Create a personal plan" subtitle="Create a draft manually or import an employee’s Excel plan." onClose={() => setModal(null)}>
+      {!modal.mode && <div className="modal-body">
+        <div className="form-grid">
+          <button className="btn btn-secondary" disabled={!data.owners.length} onClick={() => setModal({ kind: 'create', mode: 'manual' })}><Plus size={17} />Create manually</button>
+          <button className="btn btn-primary" onClick={() => setModal({ kind: 'create', mode: 'excel' })}><FileSpreadsheet size={17} />Import Excel</button>
+        </div>
+        {!data.owners.length && <p className="form-note">Manual plans require an active person with an active department assignment.</p>}
+      </div>}
+      {modal.mode === 'manual' && <CreatePlanForm data={data} onClose={() => setModal(null)}
+        onCreated={async id => { setModal(null); await saved(id, 'Draft plan created. Add its KPAs and targets.'); }} />}
+      {modal.mode === 'excel' && <ExcelPlanImport plans={data.plans} onClose={() => setModal(null)}
+        onCreated={async id => { setModal(null); await saved(id, 'Excel draft saved. Review the source targets and activities.'); }}
+        onExisting={async id => { setModal(null); await openPlan(id); }} />}
+    </Modal>}
+    {modal?.kind === 'remove' && <RemovePlanDialog plan={modal.plan} onClose={() => setModal(null)} onRemoved={() => {
+      setData(current => ({ ...current, plans: current.plans.filter(plan => plan.id !== modal.plan.id) }));
+      setModal(null);
+      setToast('Draft plan removed.');
+      refresh().catch(() => {});
+    }} />}
     {modal?.kind === 'history' && detail && <Modal title="Plan revision history" subtitle={`${detail.plan.code} · ${detail.plan.title}`} onClose={() => setModal(null)}><VersionHistory versions={detail.versions} data={data} /><div className="modal-footer"><button className="btn btn-primary" onClick={() => setModal(null)}>Done <Check size={16} /></button></div></Modal>}
     {modal?.kind === 'guide' && <Modal title="Performance planning guide" subtitle="Draft, review and publish a complete personal plan." onClose={() => setModal(null)}><div className="modal-body help-content">{[
-      ['01', 'Choose the HOF and year', 'A personal plan covers all departments led by that HOF. Keep one plan per person per year.'],
+      ['01', 'Choose the plan owner and year', 'Select a person with an active department assignment. Keep one plan per person per year.'],
       ['02', 'Add KPAs and KPI targets', 'Allocate 100% across KPAs. Inside each KPA, allocate 100% across its KPIs. Targets and weights are separate fields.'],
       ['03', 'Define supporting activities', 'Give each activity an agreed share of its parent KPI. Activity weights inside each KPI total 100%.'],
-      ['04', 'Save and publish', 'Drafts can be incomplete. Publish after validation. HOFs see the last published version while a new revision is being prepared.'],
+      ['04', 'Save and publish', 'Drafts can be incomplete. Publish after validation. Plan owners see the last published version while a new revision is being prepared.'],
     ].map(([number, title, text]) => <div className="help-step" key={number}><span>{number}</span><div><h3>{title}</h3><p>{text}</p></div></div>)}<div className="form-note"><History size={18} /><span>Each saved change keeps a revision history. Recent item changes are highlighted for three days.</span></div></div><div className="modal-footer"><button className="btn btn-primary" onClick={() => setModal(null)}>Got it <Check size={16} /></button></div></Modal>}
     {pending && <Modal title="Leave your unsaved changes?" subtitle="Your last saved draft will remain available." onClose={() => setPending(null)}><div className="modal-body"><p className="confirm-copy">You have changes that have not been saved. Stay here to save them, or discard these edits and continue.</p></div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setPending(null)}>Keep editing</button><button className="btn btn-primary" onClick={() => { const action = pending; setPending(null); setDirty(false); action(); }}>Discard edits</button></div></Modal>}
     {toast && <div className="toast" role="status"><CheckCircle2 size={18} /><span>{toast}</span><button className="icon-button" aria-label="Dismiss notification" onClick={() => setToast('')}><X size={15} /></button></div>}
   </div>;
 }
 
-function PlanTable({ plans, data, editor, onOpen, onCreate, canCreate }) {
-  if (!plans.length) return <Empty icon={FolderTree} title={editor ? 'Your next plan starts here' : 'No published plans yet'} text={editor ? 'Create a draft for a HOF, then add their KPAs, KPI targets and activities.' : 'Your plan editor will publish your agreed responsibilities here.'} action={canCreate ? <button className="btn btn-primary" onClick={onCreate}><Plus size={16} /> Create your first plan</button> : null} />;
-  return <div className="table-scroll"><table className="plan-table"><thead><tr><th>Personal plan</th><th>HOF</th><th>Structure</th><th>Allocation</th><th>Status</th><th><span className="sr-only">Open plan</span></th></tr></thead><tbody>{plans.map(plan => <tr key={plan.id}><td><button className="plan-name" onClick={() => onOpen(plan.id)}><span className="plan-document-icon"><FolderTree size={21} /></span><span><strong>{plan.title}</strong><small>{plan.code} · {plan.year}</small></span></button></td><td><div className="head-name"><Avatar name={ownerOf(data, plan.owner_id)?.name} small /><span>{ownerOf(data, plan.owner_id)?.name || 'HOF unavailable'}</span></div></td><td><span className="plan-structure">{plan.kpa_count} KPAs <span>·</span> {plan.kpi_count} KPIs<small>{plan.activity_count} activities</small></span></td><td><Allocation total={plan.weight_total} empty={!plan.kpa_count} /></td><td><PlanStatus plan={plan} /></td><td><button className="icon-button" aria-label={`Open ${plan.code}`} onClick={() => onOpen(plan.id)}><ArrowRight size={17} /></button></td></tr>)}</tbody></table></div>;
+function PlanTable({ plans, data, editor, onOpen, onCreate, canCreate, onRemove }) {
+  if (!plans.length) return <Empty icon={FolderTree} title={editor ? 'Your next plan starts here' : 'No published plans yet'} text={editor ? 'Create a draft for a person, then add their KPAs, KPI targets and activities.' : 'Your plan editor will publish your agreed responsibilities here.'} action={canCreate ? <button className="btn btn-primary" onClick={onCreate}><Plus size={16} /> Create your first plan</button> : null} />;
+  return <div className="table-scroll"><table className="plan-table"><thead><tr><th>Personal plan</th><th>Plan owner</th><th>Structure</th><th>Allocation</th><th>Status</th><th><span className="sr-only">Plan actions</span></th></tr></thead><tbody>{plans.map(plan => <tr key={plan.id}><td><button className="plan-name" onClick={() => onOpen(plan.id)}><span className="plan-document-icon"><FolderTree size={21} /></span><span><strong>{plan.title}</strong><small>{plan.code} · {plan.year}</small></span></button></td><td><div className="head-name"><Avatar name={ownerOf(data, plan.owner_id)?.name} small /><span>{ownerOf(data, plan.owner_id)?.name || 'Owner unavailable'}</span></div></td><td><span className="plan-structure">{plan.kpa_count} KPAs <span>·</span> {plan.kpi_count} KPIs<small>{plan.activity_count} activities</small></span></td><td><Allocation total={plan.weight_total} empty={!plan.kpa_count} /></td><td><PlanStatus plan={plan} /></td><td><div className="plan-row-actions">
+    <button className="icon-button" aria-label={`Open ${plan.code}`} onClick={() => onOpen(plan.id)}><ArrowRight size={17} /></button>
+    {onRemove && plan.status === 'draft' && plan.published_revision === null && <button className="icon-button danger" title="Remove draft" aria-label={`Remove draft ${plan.code}`} onClick={() => onRemove(plan)}><Trash2 size={17} /></button>}
+  </div></td></tr>)}</tbody></table></div>;
+}
+
+function RemovePlanDialog({ plan, onClose, onRemoved }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const removing = useRef(false);
+
+  async function remove() {
+    if (removing.current) return;
+    removing.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      await request('/planning/plans/' + plan.id, { method: 'DELETE', body: { revision: plan.revision } });
+      onRemoved();
+    } catch (err) {
+      setError(err);
+    } finally {
+      removing.current = false;
+      setBusy(false);
+    }
+  }
+
+  return <Modal title="Remove draft plan?" subtitle={plan.code} onClose={() => { if (!removing.current) onClose(); }}>
+    <div className="modal-body">
+      <ErrorBox error={error} />
+      <p className="confirm-copy">This permanently removes <strong>{plan.title}</strong>, including its saved KPAs, KPIs, activities and draft revisions.</p>
+    </div>
+    <div className="modal-footer">
+      <button className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
+      <button className="btn btn-primary" disabled={busy} onClick={remove}>{busy ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}Remove draft</button>
+    </div>
+  </Modal>;
 }
 
 function PlanStatus({ plan }) {
-  return <span className="plan-status-wrap"><Badge tone={plan.status === 'published' ? 'mint' : 'draft'}>{plan.status === 'published' ? 'Published' : 'Draft'}</Badge>{plan.status === 'draft' && plan.published_revision && <small>Published version available</small>}</span>;
+  return <span className="plan-status-wrap"><Badge tone={plan.status === 'published' ? 'mint' : 'draft'}>{plan.status === 'published' ? 'Published' : plan.imported ? 'Excel draft' : 'Draft'}</Badge>{plan.status === 'draft' && plan.published_revision && <small>Published version available</small>}</span>;
 }
 
 function Allocation({ total, empty = false, label }) {
@@ -165,17 +225,18 @@ function Allocation({ total, empty = false, label }) {
 
 function CreatePlanForm({ data, onClose, onCreated }) {
   const currentYear = new Date().getFullYear();
-  const [form, setForm] = useState({ title: '', code: '', owner_id: '', year: currentYear, kpas: [] });
+  const [form, setForm] = useState({ title: '', code: null, owner_id: '', year: currentYear, kpas: [] });
   const [error, setError] = useState(null), [busy, setBusy] = useState(false);
   async function submit(e) {
     e.preventDefault(); setBusy(true); setError(null);
-    try { const result = await request('/planning/plans', { method: 'POST', body: { ...form, owner_id: Number(form.owner_id), year: Number(form.year) } }); await onCreated(result.id); }
+    try { const result = await request('/planning/plans', { method: 'POST', body: { ...form, code, owner_id: Number(form.owner_id), year: Number(form.year) } }); await onCreated(result.id); }
     catch (err) { setError(err); }
     finally { setBusy(false); }
   }
   const selectedOwner = ownerOf(data, form.owner_id);
-  const departments = data.memberships.filter(m => sameId(m.user_id, form.owner_id)).map(m => departmentOf(data, m.department_id));
-  return <form onSubmit={submit}><div className="modal-body"><ErrorBox error={error} /><Field label="Plan title" required><input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} maxLength={180} placeholder="e.g. 2026 IT and digital services plan" required /></Field><div className="form-grid"><Field label="Head of function" required><select value={form.owner_id} onChange={e => { const owner = ownerOf(data, e.target.value); setForm({ ...form, owner_id: e.target.value, code: form.code || `PLAN-${form.year}-${owner?.employee_number || owner?.id}` }); }} required><option value="">Select a HOF</option>{data.owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name} · {owner.employee_number}</option>)}</select></Field><Field label="Performance year" required><input type="number" min="2000" max="2100" value={form.year} onChange={e => setForm({ ...form, year: e.target.value })} required /></Field></div><Field label="Plan ID" required hint="A permanent identifier. Letters, numbers, hyphens and underscores."><input value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') })} maxLength={64} placeholder="PLAN-2026-EMP001" required /></Field>{selectedOwner && <div className="selected-owner"><Avatar name={selectedOwner.name} /><div><strong>{selectedOwner.name}</strong><span>{selectedOwner.designation}</span><div className="owner-departments">{departments.filter(Boolean).map(dept => <Badge key={dept.id}>{dept.name}</Badge>)}</div></div></div>}<div className="form-note"><Target size={18} /><span>All of this HOF’s departments share one personal 100% plan. You can save incomplete allocations as a draft.</span></div></div><div className="modal-footer"><button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={busy}>{busy ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />}Create draft</button></div></form>;
+  const departments = departmentsForOwner(data, form.owner_id);
+  const code = form.code ?? (selectedOwner && form.year ? `PLAN-${form.year}-${selectedOwner.employee_number || selectedOwner.id}`.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 64) : '');
+  return <form onSubmit={submit}><div className="modal-body"><ErrorBox error={error} /><Field label="Plan title" required><input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} maxLength={180} placeholder="e.g. 2026 IT and digital services plan" required /></Field><div className="form-grid"><Field label="Plan owner" required><select value={form.owner_id} onChange={e => setForm({ ...form, owner_id: e.target.value })} required><option value="">Select a person</option>{data.owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name} · {owner.employee_number}</option>)}</select></Field><Field label="Performance year" required><input type="number" min="2000" max="2100" value={form.year} onChange={e => setForm({ ...form, year: e.target.value })} required /></Field></div><Field label="Plan ID" required hint="A permanent identifier. Letters, numbers, hyphens and underscores."><input value={code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') })} maxLength={64} placeholder="PLAN-2026-EMP001" required /></Field>{selectedOwner && <div className="selected-owner"><Avatar name={selectedOwner.name} /><div><strong>{selectedOwner.name}</strong><span>{selectedOwner.designation}</span><div className="owner-departments">{departments.map(dept => <Badge key={dept.id}>{dept.name}</Badge>)}</div></div></div>}<div className="form-note"><Target size={18} /><span>The selected person has one plan per year, with KPA weights adding up to 100%. You can save incomplete allocations as a draft.</span></div></div><div className="modal-footer"><button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={busy}>{busy ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />}Create draft</button></div></form>;
 }
 
 function PlanEditor({ detail, data, onDirty, onBack, onSaved, onHistory }) {
@@ -185,7 +246,7 @@ function PlanEditor({ detail, data, onDirty, onBack, onSaved, onHistory }) {
   const dirty = JSON.stringify(draft) !== JSON.stringify(detail.plan);
   const editor = detail.can_edit;
   const owner = ownerOf(data, draft.owner_id);
-  const availableDepartments = data.memberships.filter(m => sameId(m.user_id, draft.owner_id)).map(m => departmentOf(data, m.department_id)).filter(Boolean);
+  const availableDepartments = departmentsForOwner(data, draft.owner_id);
   const issues = detail.issues || [];
   const total = sumWeights(draft.kpas);
   const kpiCount = draft.kpas.reduce((sum, kpa) => sum + kpa.kpis.length, 0);
@@ -201,17 +262,18 @@ function PlanEditor({ detail, data, onDirty, onBack, onSaved, onHistory }) {
   }
   async function publish() {
     setBusy(true); setError(null);
-    try { await request(`/planning/plans/${draft.id}/publish`, { method: 'POST', body: { revision: draft.revision } }); setConfirmPublish(false); await onSaved(draft.id, 'Plan published. The HOF can now view this version.'); }
+    try { await request(`/planning/plans/${draft.id}/publish`, { method: 'POST', body: { revision: draft.revision } }); setConfirmPublish(false); await onSaved(draft.id, 'Plan published. The plan owner can now view this version.'); }
     catch (err) { setConfirmPublish(false); setError(err); }
     finally { setBusy(false); }
   }
   return <>
     <button className="back-button" onClick={onBack}><ArrowLeft size={16} />All performance plans</button>
-    <div className="page-heading editor-heading"><div><div className="eyebrow">{draft.code} <span className="editor-revision">VERSION {draft.revision}</span></div><h1>{draft.title}</h1><p>{owner?.name || 'HOF unavailable'} <span className="separator-dot">·</span> {draft.year} <span className="separator-dot">·</span> {editor ? 'Personal performance plan' : 'Published personal plan'}</p></div><div className="editor-heading-status"><PlanStatus plan={{ ...draft, published_revision: detail.published_revision }} /><button className="text-button" onClick={onHistory}><History size={15} />Revision history</button></div></div>
+    <div className="page-heading editor-heading"><div><div className="eyebrow">{draft.code} <span className="editor-revision">VERSION {draft.revision}</span></div><h1>{draft.title}</h1><p>{owner?.name || 'Owner unavailable'} <span className="separator-dot">·</span> {draft.year} <span className="separator-dot">·</span> {editor ? 'Personal performance plan' : 'Published personal plan'}</p></div><div className="editor-heading-status"><PlanStatus plan={{ ...draft, imported: !!draft.excel_source, published_revision: detail.published_revision }} /><button className="text-button" onClick={onHistory}><History size={15} />Revision history</button></div></div>
+    {draft.excel_source && <p className="form-note"><FileSpreadsheet size={17} /><span>Excel source · {draft.excel_source.filename} · {draft.excel_source.sheet}</span></p>}
     <ErrorBox error={error} />
     <section className="plan-summary-bar"><div><span>KPAs</span><strong>{draft.kpas.length}</strong></div><div><span>KPIs</span><strong>{kpiCount}</strong></div><div><span>Activities</span><strong>{activityCount}</strong></div><div className="summary-allocation"><span>Personal plan allocation</span><Allocation total={total} empty={!draft.kpas.length} /></div><div><span>{editor ? 'Last published' : 'Published on'}</span><strong className="summary-date">{dateLabel(draft.published_at)}</strong></div></section>
     {!editor ? <PublishedPlan plan={draft} data={data} /> : <>
-      {detail.published_revision && draft.status === 'draft' && <div className="published-note"><FileCheck2 size={18} /><p>A published version is available to the HOF. These draft edits stay private until you publish a new version.</p></div>}
+      {detail.published_revision && draft.status === 'draft' && <div className="published-note"><FileCheck2 size={18} /><p>A published version is available to the plan owner. These draft edits stay private until you publish a new version.</p></div>}
       <form id="performance-plan-form" onSubmit={save}>
         <fieldset className="plan-fieldset" disabled={busy}><section className="panel plan-title-panel"><Field label="Plan title" required><input value={draft.title} onChange={e => change(next => { next.title = e.target.value; })} maxLength={180} required /></Field><div className="plan-fixed-details"><span><Users size={15} />{owner?.name}</span><span><FolderTree size={15} />{draft.code}</span><span>{draft.year}</span></div></section>
           <div className="plan-section-heading"><div><h2>Key performance areas</h2><p>Allocate one 100% total across every department in this personal plan.</p></div><button className="btn btn-secondary" type="button" onClick={addKpa} disabled={draft.kpas.length >= 20}><Plus size={16} />Add KPA</button></div>
@@ -220,7 +282,7 @@ function PlanEditor({ detail, data, onDirty, onBack, onSaved, onHistory }) {
             <Field label="KPA title" required><textarea rows={2} value={kpa.title} onChange={e => change(next => { next.kpas[i].title = e.target.value; })} maxLength={1000} placeholder="Describe the area of responsibility" required /></Field><div className="kpa-fields"><Field label="Department" required><select value={kpa.department_id} required onChange={e => change(next => { next.kpas[i].department_id = Number(e.target.value); })}><option value="">Select department</option>{availableDepartments.map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}</select></Field><Field label="Balanced scorecard category"><input value={kpa.category || ''} maxLength={100} placeholder="e.g. Finance" onChange={e => change(next => { next.kpas[i].category = e.target.value; })} /></Field><WeightField label="Weight in personal plan" value={kpa.weight} onChange={value => change(next => { next.kpas[i].weight = value; })} /></div><Field label="KPA notes"><input value={kpa.notes || ''} maxLength={1000} onChange={e => change(next => { next.kpas[i].notes = e.target.value; })} placeholder="Optional context" /></Field>
             <div className="nested-section-heading"><div><h3>KPIs in this KPA</h3><span>{percent(sumWeights(kpa.kpis))} allocated</span></div><button type="button" className="btn btn-secondary btn-small" disabled={kpa.kpis.length >= 30} onClick={() => change(next => next.kpas[i].kpis.push({ code: newId('KPI'), title: '', weight: null, target_value: null, target_unit: '', frequency: '', direction: '', notes: '', activities: [] }))}><Plus size={14} />Add KPI</button></div>
             {!kpa.kpis.length && <div className="nested-empty">No KPIs yet. Add the measures used to assess this responsibility.</div>}
-            {kpa.kpis.map((kpi, j) => <section className="kpi-editor" key={kpi.code}><div className="kpi-editor-heading"><div><Target size={17} /><strong>{kpi.code}</strong>{recent(kpi.changed_at) && <span className="recent-label">Recent change</span>}</div><button type="button" className="icon-button danger" aria-label={`Remove ${kpi.code}`} onClick={() => setRemove({ label: kpi.title || kpi.code, action: () => change(next => next.kpas[i].kpis.splice(j, 1)) })}><Trash2 size={15} /></button></div><Field label="KPI title" required><input value={kpi.title} maxLength={1000} placeholder="e.g. Capital Budget Utilization Rate" required onChange={e => change(next => { next.kpas[i].kpis[j].title = e.target.value; })} /></Field><div className="kpi-fields"><WeightField label="Weight within KPA" value={kpi.weight} onChange={value => change(next => { next.kpas[i].kpis[j].weight = value; })} /><Field label="Target value" hint="Enter 30 for a 30% target."><input type="number" step="0.0001" min="-9999999999999" max="9999999999999" value={kpi.target_value ?? ''} placeholder="e.g. 30" onChange={e => change(next => { next.kpas[i].kpis[j].target_value = e.target.value === '' ? null : Number(e.target.value); })} /></Field><Field label="Target unit"><select value={kpi.target_unit || ''} onChange={e => change(next => { next.kpas[i].kpis[j].target_unit = e.target.value; })}><option value="">Select unit</option>{['percent', 'count', 'LKR', 'days', 'hours', 'other'].map(unit => <option key={unit} value={unit}>{unit === 'percent' ? 'Percent (%)' : unit}</option>)}</select></Field><Field label="Monitoring frequency"><select value={kpi.frequency || ''} onChange={e => change(next => { next.kpas[i].kpis[j].frequency = e.target.value; })}><option value="">Select frequency</option>{['Monthly', 'Quarterly', 'Annually', 'On completion'].map(frequency => <option key={frequency}>{frequency}</option>)}</select></Field><Field label="Target direction"><select value={kpi.direction || ''} onChange={e => change(next => { next.kpas[i].kpis[j].direction = e.target.value; })}><option value="">Select direction</option><option value="higher">Higher is better</option><option value="lower">Lower is better</option></select></Field><Field label="KPI notes"><input value={kpi.notes || ''} maxLength={1000} placeholder="Optional measurement details" onChange={e => change(next => { next.kpas[i].kpis[j].notes = e.target.value; })} /></Field></div>
+            {kpa.kpis.map((kpi, j) => <section className="kpi-editor" key={kpi.code}><div className="kpi-editor-heading"><div><Target size={17} /><strong>{kpi.code}</strong>{recent(kpi.changed_at) && <span className="recent-label">Recent change</span>}</div><button type="button" className="icon-button danger" aria-label={`Remove ${kpi.code}`} onClick={() => setRemove({ label: kpi.title || kpi.code, action: () => change(next => next.kpas[i].kpis.splice(j, 1)) })}><Trash2 size={15} /></button></div><Field label="KPI title" required><input value={kpi.title} maxLength={1000} placeholder="e.g. Capital Budget Utilization Rate" required onChange={e => change(next => { next.kpas[i].kpis[j].title = e.target.value; })} /></Field><div className="kpi-fields"><WeightField label="Weight within KPA" value={kpi.weight} onChange={value => change(next => { next.kpas[i].kpis[j].weight = value; })} /><Field label="Target value" hint="Enter 30 for a 30% target."><input type="number" step="0.0001" min="-9999999999999" max="9999999999999" value={kpi.target_value ?? ''} placeholder="e.g. 30" onChange={e => change(next => { next.kpas[i].kpis[j].target_value = e.target.value === '' ? null : Number(e.target.value); })} /></Field><Field label="Target unit"><select value={kpi.target_unit || ''} onChange={e => change(next => { next.kpas[i].kpis[j].target_unit = e.target.value; })}><option value="">Select unit</option>{['percent', 'count', 'LKR', 'days', 'hours', 'other'].map(unit => <option key={unit} value={unit}>{unit === 'percent' ? 'Percent (%)' : unit}</option>)}</select></Field><Field label="Monitoring frequency"><select value={kpi.frequency || ''} onChange={e => change(next => { next.kpas[i].kpis[j].frequency = e.target.value; })}><option value="">Select frequency</option>{['Monthly', 'Quarterly', 'Annually', 'On completion'].map(frequency => <option key={frequency}>{frequency}</option>)}</select></Field><Field label="Target direction"><select value={kpi.direction || ''} onChange={e => change(next => { next.kpas[i].kpis[j].direction = e.target.value; })}><option value="">Select direction</option><option value="higher">Higher is better</option><option value="lower">Lower is better</option></select></Field><Field label="KPI notes"><textarea rows={draft.excel_source ? 4 : 2} value={kpi.notes || ''} maxLength={1000} placeholder="Optional measurement details" onChange={e => change(next => { next.kpas[i].kpis[j].notes = e.target.value; })} /></Field></div>
               <div className="activities-heading"><div><h4>Supporting activities</h4><small>{percent(sumWeights(kpi.activities))} allocated within this KPI</small></div><button type="button" className="text-button" disabled={kpi.activities.length >= 50} onClick={() => change(next => next.kpas[i].kpis[j].activities.push({ code: newId('ACT'), title: '', weight: null, due_date: '', notes: '' }))}><Plus size={14} />Add activity</button></div>
               {!kpi.activities.length && <div className="nested-empty activity-empty">Add the work needed to deliver this KPI.</div>}
               {kpi.activities.map((activity, k) => <div className="activity-editor" key={activity.code}><div className="activity-editor-label"><span>{activity.code}</span>{recent(activity.changed_at) && <span className="recent-label">Recent change</span>}<button type="button" className="icon-button danger" aria-label={`Remove ${activity.code}`} onClick={() => setRemove({ label: activity.title || activity.code, action: () => change(next => next.kpas[i].kpis[j].activities.splice(k, 1)) })}><Trash2 size={14} /></button></div><Field label="Activity description" required><textarea rows={2} value={activity.title} maxLength={1000} placeholder="Describe the work to be done" required onChange={e => change(next => { next.kpas[i].kpis[j].activities[k].title = e.target.value; })} /></Field><div className="activity-fields"><WeightField label="Weight within KPI" value={activity.weight} onChange={value => change(next => { next.kpas[i].kpis[j].activities[k].weight = value; })} /><Field label="Due date (optional)"><input type="date" value={activity.due_date || ''} onChange={e => change(next => { next.kpas[i].kpis[j].activities[k].due_date = e.target.value; })} /></Field><Field label="Activity notes"><input value={activity.notes || ''} maxLength={1000} placeholder="Optional" onChange={e => change(next => { next.kpas[i].kpis[j].activities[k].notes = e.target.value; })} /></Field></div></div>)}
@@ -231,7 +293,7 @@ function PlanEditor({ detail, data, onDirty, onBack, onSaved, onHistory }) {
       <section className={`publication-check panel ${!issues.length && !dirty ? 'publication-ready' : ''}`}><div><ShieldCheck size={20} /><div><h3>{dirty ? 'Save to check publication readiness' : issues.length ? `${issues.length} item${issues.length === 1 ? '' : 's'} to resolve before publishing` : 'Ready to publish'}</h3><p>{dirty ? 'Your current edits have not been saved or validated for publication.' : issues.length ? 'Drafts can stay incomplete. Resolve these details before publishing.' : 'The saved allocation and required KPI fields are complete.'}</p></div></div>{!dirty && issues.length > 0 && <ul>{issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul>}</section>
       <div className="plan-save-bar"><div><span className={dirty ? 'unsaved-dot' : 'saved-dot'} />{dirty ? 'Unsaved changes' : `Saved version ${draft.revision}`}<small>{draft.status === 'published' ? 'Published' : 'Draft'}</small></div><div><button type="submit" form="performance-plan-form" className="btn btn-secondary" disabled={busy || !dirty}>{busy ? <LoaderCircle className="spin" size={16} /> : <Save size={16} />}Save draft</button><button className="btn btn-primary" disabled={busy || dirty || issues.length > 0 || draft.status === 'published'} onClick={() => setConfirmPublish(true)}><Send size={16} />Publish plan</button></div></div>
     </>}
-    {confirmPublish && <Modal title="Publish this performance plan?" subtitle={`${draft.code} · version ${draft.revision}`} onClose={() => { if (!busy) setConfirmPublish(false); }}><div className="modal-body"><p className="confirm-copy">This publishes the saved plan for <strong>{owner?.name}</strong>. The HOF will see this version. Future edits will start a new draft while this published version stays available.</p></div><div className="modal-footer"><button className="btn btn-secondary" disabled={busy} onClick={() => setConfirmPublish(false)}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={publish}>{busy ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />}Publish now</button></div></Modal>}
+    {confirmPublish && <Modal title="Publish this performance plan?" subtitle={`${draft.code} · version ${draft.revision}`} onClose={() => { if (!busy) setConfirmPublish(false); }}><div className="modal-body"><p className="confirm-copy">This publishes the saved plan for <strong>{owner?.name}</strong>. The plan owner will see this version. Future edits will start a new draft while this published version stays available.</p></div><div className="modal-footer"><button className="btn btn-secondary" disabled={busy} onClick={() => setConfirmPublish(false)}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={publish}>{busy ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />}Publish now</button></div></Modal>}
     {remove && <Modal title="Remove this responsibility?" subtitle="The removal is recorded when you save the draft." onClose={() => setRemove(null)}><div className="modal-body"><p className="confirm-copy"><strong>{remove.label}</strong> and its child items will be removed from the current draft. Previously saved revisions remain in the history.</p></div><div className="modal-footer"><button className="btn btn-secondary" onClick={() => setRemove(null)}>Keep item</button><button className="btn btn-primary" onClick={() => { remove.action(); setRemove(null); }}>Remove from draft</button></div></Modal>}
   </>;
 }
@@ -247,7 +309,7 @@ function PublishedPlan({ plan, data }) {
 function VersionHistory({ versions, data }) {
   const labels = { title: 'Title', weight: 'Weight', target_value: 'Target', target_unit: 'Unit', frequency: 'Frequency', direction: 'Direction', due_date: 'Due date', notes: 'Notes', category: 'Scorecard category', department_id: 'Department', display_order: 'Order', is_active: 'Included in plan', parent_id: 'Parent responsibility' };
   const display = (field, value) => value === null || value === undefined || value === '' ? 'Not set' : field === 'weight' ? percent(value) : field === 'department_id' ? departmentOf(data, value)?.name || 'Department changed' : field === 'parent_id' ? 'Placement updated' : field === 'is_active' ? (Number(value) ? 'Yes' : 'No') : String(value);
-  return <div className="modal-body version-history">{!versions.length ? <Empty icon={History} title="No revisions yet" text="Saved changes will appear here." /> : versions.map(version => <section className="version-entry" key={version.id}><div className="version-entry-heading"><span className={`version-icon ${version.event === 'published' ? 'version-published' : ''}`}>{version.event === 'published' ? <Send size={17} /> : <Save size={17} />}</span><div><h3>Version {version.version} <Badge tone={version.event === 'published' ? 'mint' : 'neutral'}>{version.event === 'published' ? 'Published' : version.event === 'created' ? 'Draft created' : 'Draft updated'}</Badge></h3><p>{version.actor_name} · {dateLabel(version.created_at)}</p></div></div>{version.changes.length > 0 ? <div className="version-changes">{version.changes.map((change, i) => <details key={`${change.code}-${i}`}><summary><Badge tone={change.type === 'added' ? 'mint' : change.type === 'removed' ? 'draft' : 'neutral'}>{change.type}</Badge><span><small>{change.code}</small>{change.title}</span>{Object.keys(change.fields).length > 0 && <ChevronRight size={14} />}</summary>{Object.entries(change.fields).length > 0 && <dl>{Object.entries(change.fields).map(([field, values]) => <div key={field}><dt>{labels[field] || field}</dt><dd><span>{display(field, values.before)}</span><ArrowRight size={12} /><strong>{display(field, values.after)}</strong></dd></div>)}</dl>}</details>)}</div> : <p className="version-publication-note">{version.event === 'published' ? 'The saved plan became available to its HOF.' : 'The personal plan was created.'}</p>}</section>)}</div>;
+  return <div className="modal-body version-history">{!versions.length ? <Empty icon={History} title="No revisions yet" text="Saved changes will appear here." /> : versions.map(version => <section className="version-entry" key={version.id}><div className="version-entry-heading"><span className={`version-icon ${version.event === 'published' ? 'version-published' : ''}`}>{version.event === 'published' ? <Send size={17} /> : <Save size={17} />}</span><div><h3>Version {version.version} <Badge tone={version.event === 'published' ? 'mint' : 'neutral'}>{version.event === 'published' ? 'Published' : version.event === 'created' ? 'Draft created' : 'Draft updated'}</Badge></h3><p>{version.actor_name} · {dateLabel(version.created_at)}</p></div></div>{version.changes.length > 0 ? <div className="version-changes">{version.changes.map((change, i) => <details key={`${change.code}-${i}`}><summary><Badge tone={change.type === 'added' ? 'mint' : change.type === 'removed' ? 'draft' : 'neutral'}>{change.type}</Badge><span><small>{change.code}</small>{change.title}</span>{Object.keys(change.fields).length > 0 && <ChevronRight size={14} />}</summary>{Object.entries(change.fields).length > 0 && <dl>{Object.entries(change.fields).map(([field, values]) => <div key={field}><dt>{labels[field] || field}</dt><dd><span>{display(field, values.before)}</span><ArrowRight size={12} /><strong>{display(field, values.after)}</strong></dd></div>)}</dl>}</details>)}</div> : <p className="version-publication-note">{version.event === 'published' ? 'The saved plan became available to its owner.' : 'The personal plan was created.'}</p>}</section>)}</div>;
 }
 
 

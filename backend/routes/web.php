@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\DeliveryController;
+use App\Http\Controllers\ExcelPlanImportController;
 use App\Http\Controllers\HofReviewController;
 use App\Http\Controllers\HofWorkController;
 use App\Http\Controllers\KpiAssignmentController;
@@ -65,16 +66,22 @@ Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecuti
         Route::get('/hof-reviewers', [HofReviewController::class, 'workspace']);
         Route::post('/hof-reviewers/{assignment}', [HofReviewController::class, 'assign'])->whereNumber('assignment');
         Route::get('/workspace', [PerformancePlanController::class, 'workspace']);
+        Route::get('/excel-import/options', [ExcelPlanImportController::class, 'options']);
+        Route::post('/excel-import', [ExcelPlanImportController::class, 'import'])->middleware('throttle:30,1');
         Route::get('/plans/{plan}', [PerformancePlanController::class, 'show'])->whereNumber('plan');
         Route::post('/plans', [PerformancePlanController::class, 'store'])->middleware('throttle:30,1');
         Route::put('/plans/{plan}', [PerformancePlanController::class, 'update'])->whereNumber('plan')->middleware('throttle:30,1');
+        Route::delete('/plans/{plan}', [PerformancePlanController::class, 'destroy'])->whereNumber('plan')->middleware('throttle:30,1');
         Route::post('/plans/{plan}/publish', [PerformancePlanController::class, 'publish'])->whereNumber('plan')->middleware('throttle:30,1');
     });
     Route::middleware(['auth', RequireSystemAdmin::class])->prefix('admin')->group(function () {
         Route::get('/workspace', [AdminController::class, 'workspace']);
+        Route::put('/departments/{department}/reporting', [AdminController::class, 'saveDepartmentReporting'])->whereNumber('department');
         Route::post('/users', [AdminController::class, 'saveUser']);
         Route::put('/users/{user}', [AdminController::class, 'saveUser']);
+        Route::delete('/users/{user}', [AdminController::class, 'removeUser'])->whereNumber('user');
         Route::post('/departments', [AdminController::class, 'saveDepartment']);
         Route::put('/departments/{department}', [AdminController::class, 'saveDepartment']);
+        Route::delete('/departments/{department}', [AdminController::class, 'removeDepartment'])->whereNumber('department');
     });
 });

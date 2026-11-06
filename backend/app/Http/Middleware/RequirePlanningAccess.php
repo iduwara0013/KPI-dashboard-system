@@ -17,9 +17,12 @@ class RequirePlanningAccess
 
     public static function canView(?User $user): bool
     {
-        return $user?->is_active && $user->system_role !== 'super_admin' && (self::canEdit($user) || DB::table('department_memberships')
+        return $user?->is_active && (self::canEdit($user) || ($user->system_role === 'member' && DB::table('department_memberships')
             ->join('departments', 'departments.id', '=', 'department_memberships.department_id')
-            ->where('user_id', $user->id)->where('responsibility', 'hof')->where('departments.is_active', true)->exists());
+            ->where('user_id', $user->id)->where('departments.is_active', true)
+            ->where(fn ($query) => $query->where('responsibility', 'hof')->orWhereExists(
+                DB::table('performance_plans')->whereColumn('owner_id', 'department_memberships.user_id')->whereNotNull('published_revision')
+            ))->exists()));
     }
 
     public function handle(Request $request, Closure $next): Response
