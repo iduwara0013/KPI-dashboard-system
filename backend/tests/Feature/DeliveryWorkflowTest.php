@@ -75,6 +75,124 @@ class DeliveryWorkflowTest extends TestCase
         return (int) DB::table('task_submissions')->where('task_id', $task)->orderByDesc('id')->value('id');
     }
 
+    public function test_editor_can_delete_a_published_plan_with_linked_work_after_confirming_current_details(): void
+    {
+        [$parent] = $this->allocate();
+        $this->actingAs($this->employee)->putJson('/api/delivery/tasks/'.$parent.'/tasks', [
+            'version' => 1, 'tasks' => [['title' => 'Detailed installation', 'assignee_id' => $this->employee->id, 'weight' => 1]],
+        ])->assertOk();
+        $child = (int) DB::table('delivery_tasks')->where('parent_task_id', $parent)->value('id');
+        $this->actingAs($this->hof)->postJson('/api/hof/kpi-assignments', [
+            'plan_id' => $this->plan, 'kpi_code' => 'KPI-IT', 'source_revision' => 2, 'version' => 0, 'assignee_id' => $this->manager->id,
+            'proposed_personal_weight' => 0.5,
+        ])->assertOk();
+        DB::table('monthly_kpi_reviewers')->insert(['plan_id' => $this->plan, 'kpi_code' => 'KPI-IT', 'reviewer_id' => $this->hof->id]);
+        DB::table('monthly_kpi_submissions')->insert([
+            'plan_id' => $this->plan, 'kpi_code' => 'KPI-IT', 'month' => 1, 'attempt' => 1,
+            'source_revision' => 2, 'target_value' => 100, 'target_unit' => 'percent', 'direction' => 'higher',
+            'actual_value' => 80, 'evidence' => 'Historical result.', 'submitted_by' => $this->manager->id,
+            'status' => 'approved', 'created_at' => now(),
+        ]);
+        DB::table('personal_weight_proposals')->insert([
+            'owner_id' => $this->manager->id, 'actor_id' => $this->hof->id, 'source_key' => 'unrelated-source', 'weight' => 0.2,
+        ]);
+        \App\Http\Controllers\NotificationController::send($this->manager->id, 'unrelated-test', 'assignment', 'Another plan notification.', ['workspace' => 'delivery', 'page' => 'tasks']);
+        $url = '/api/planning/plans/'.$this->plan;
+        $this->getJson($url.'/deletion')->assertForbidden();
+        $this->actingAs($this->editor);
+        $unrelated = $this->postJson('/api/planning/plans', [
+            'code' => 'OTHER-PLAN', 'title' => 'Other plan', 'owner_id' => $this->user('EMP002')->id, 'year' => 2026, 'kpas' => [],
+        ])->assertCreated()->json('id');
+        $preview = $this->getJson($url.'/deletion')->assertOk()->assertJsonPath('counts.tasks', 4)
+            ->assertJsonPath('counts.monthly_results', 1)->json();
+        $submission = $this->submitTask($this->employee, $child);
+        $this->actingAs($this->editor)->deleteJson($url, ['revision' => $preview['revision'], 'deletion_token' => $preview['deletion_token']])->assertConflict();
+        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $this->actingAs($this->editor);
+        $preview = $this->getJson($url.'/deletion')->assertOk()->assertJsonPath('counts.submissions', 1)->json();
+        $confirmation = ['revision' => $preview['revision'], 'deletion_token' => $preview['deletion_token']];
+        $this->actingAs($this->hof)->deleteJson($url, $confirmation)->assertForbidden();
+        $this->actingAs($this->editor)->deleteJson($url, $confirmation)->assertOk();
+        $this->getJson($url)->assertNotFound();
+        $this->assertDatabaseHas('performance_plans', ['id' => $unrelated]);
+        foreach (['work_assignments', 'kpi_delegations', 'monthly_kpi_submissions', 'monthly_kpi_reviewers'] as $table) {
+            $this->assertDatabaseMissing($table, ['plan_id' => $this->plan]);
+        }
+        $this->assertDatabaseCount('delivery_tasks', 0);
+        $this->assertDatabaseCount('task_submissions', 0);
+        $this->assertDatabaseHas('personal_weight_proposals', ['source_key' => 'unrelated-source']);
+        $this->assertDatabaseCount('personal_weight_proposals', 1);
+        $this->assertDatabaseHas('work_notifications', ['event_key' => 'unrelated-test']);
+        $this->assertDatabaseCount('work_notifications', 1);
+        $this->assertDatabaseHas('admin_activity', ['action' => 'plan.removed', 'actor_id' => $this->editor->id]);
+        $this->assertDatabaseHas('users', ['id' => $this->hof->id]);
+        $this->assertDatabaseHas('reporting_relationships', ['user_id' => $this->employee->id, 'manager_id' => $this->manager->id]);
+    }
+
+    public function test_reporting_tree_weights_roll_up_and_personal_performance_rebalances(): void
+    {
+        $department = DB::table('work_assignments')->where('id', $this->assignment)->value('department_id');
+        $junior = User::factory()->create(['system_role' => 'member', 'is_active' => true]);
+        DB::table('department_memberships')->insert(['user_id' => $junior->id, 'department_id' => $department, 'responsibility' => 'employee']);
+        DB::table('reporting_relationships')->insert(['user_id' => $junior->id, 'manager_id' => $this->employee->id, 'department_id' => $department]);
+        $this->putJson('/api/delivery/assignments/'.$this->assignment.'/tasks', [
+            'version' => 1, 'tasks' => [
+                ['title' => 'Team delivery', 'assignee_id' => $this->employee->id, 'weight' => 0.7],
+                ['title' => 'Manager coordination', 'assignee_id' => $this->manager->id, 'weight' => 0.3],
+            ],
+        ])->assertOk();
+        $parent = DB::table('delivery_tasks')->where('assignment_id', $this->assignment)->where('assignee_id', $this->employee->id)->first();
+        $own = DB::table('delivery_tasks')->where('assignment_id', $this->assignment)->where('assignee_id', $this->manager->id)->first();
+        $branch = ['version' => 1, 'tasks' => [
+            ['title' => 'Technical work', 'assignee_id' => $junior->id, 'weight' => 0.8],
+            ['title' => 'Validation', 'assignee_id' => $this->employee->id, 'weight' => 0.2],
+        ]];
+        $this->actingAs($this->otherEmployee)->putJson('/api/delivery/tasks/'.$parent->id.'/tasks', $branch)->assertForbidden();
+        $this->actingAs($this->employee)->putJson('/api/delivery/tasks/'.$parent->id.'/tasks', [
+            ...$branch, 'tasks' => [...$branch['tasks'], ['title' => 'Extra', 'assignee_id' => $junior->id, 'weight' => 0.1]],
+        ])->assertUnprocessable();
+        $this->putJson('/api/delivery/tasks/'.$parent->id.'/tasks', $branch)->assertOk();
+        $this->getJson('/api/delivery/workspace')->assertJsonPath('tasks.0.has_children', true);
+        $this->postJson('/api/delivery/tasks/'.$parent->id.'/submit', ['version' => 2, 'evidence' => 'Cannot bypass delegated work.'])->assertConflict();
+        $child = DB::table('delivery_tasks')->where('parent_task_id', $parent->id)->where('assignee_id', $junior->id)->first();
+        $validation = DB::table('delivery_tasks')->where('parent_task_id', $parent->id)->where('assignee_id', $this->employee->id)->first();
+        $submission = $this->submitTask($junior, (int) $child->id);
+        $this->assertDatabaseHas('work_assignments', ['id' => $this->assignment, 'confirmed_progress' => 0]);
+        $this->actingAs($this->employee)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $this->assertDatabaseHas('delivery_tasks', ['id' => $parent->id, 'confirmed_progress' => 80]);
+        $this->assertDatabaseHas('work_assignments', ['id' => $this->assignment, 'confirmed_progress' => 56]);
+        $this->getJson('/api/allocations/people/'.$this->employee->id.'/2026')
+            ->assertJsonCount(1, 'live_score.entries')->assertJsonPath('live_score.confirmed_completion', 80);
+        $this->actingAs($this->manager)->getJson('/api/allocations/people/'.$this->manager->id.'/2026')
+            ->assertJsonPath('live_score.entries.0.weight', 1)->assertJsonPath('live_score.confirmed_completion', 56);
+        $submission = $this->submitTask($this->employee, (int) $validation->id);
+        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $this->assertDatabaseHas('work_assignments', ['id' => $this->assignment, 'confirmed_progress' => 70]);
+        $submission = $this->submitTask($this->manager, (int) $own->id);
+        $this->actingAs($this->hof)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $this->assertDatabaseHas('work_assignments', ['id' => $this->assignment, 'confirmed_progress' => 100]);
+        $this->actingAs($this->manager)->getJson('/api/allocations/people/'.$this->manager->id.'/2026')
+            ->assertJsonPath('live_score.confirmed_completion', 100);
+        $this->actingAs($this->hof)->postJson('/api/hof/assignments', [
+            'plan_id' => $this->plan, 'activity_code' => 'ACT-DEPLOY', 'source_revision' => 2,
+            'version' => 0, 'assignee_id' => $this->manager->id,
+        ])->assertOk();
+        $this->actingAs($this->manager)->getJson('/api/allocations/people/'.$this->manager->id.'/2026')
+            ->assertJsonPath('live_score.entries.0.weight', 0.25)
+            ->assertJsonPath('live_score.entries.1.weight', 0.75)
+            ->assertJsonPath('live_score.confirmed_completion', 25);
+        $md = User::factory()->create(['system_role' => 'md', 'is_active' => true]);
+        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertJsonPath('activities.0.approved', 100);
+        DB::table('reporting_relationships')->where('user_id', $junior->id)->delete();
+        $this->getJson('/api/md/workspace?year=2026')->assertJsonPath('activities.0.approved', 0);
+        $version = DB::table('work_assignments')->where('id', $this->assignment)->value('version');
+        $this->actingAs($this->hof)->postJson('/api/hof/assignments', [
+            'plan_id' => $this->plan, 'activity_code' => 'ACT-SPEC', 'source_revision' => 2,
+            'version' => $version, 'assignee_id' => $this->manager->id,
+        ])->assertOk();
+        $this->assertDatabaseHas('work_assignments', ['id' => $this->assignment, 'delivery_generation' => 2, 'confirmed_progress' => 0]);
+    }
+
     public function test_manager_and_employee_login_and_workspace_isolation(): void
     {
         $this->postJson('/api/logout')->assertOk();
@@ -230,7 +348,7 @@ class DeliveryWorkflowTest extends TestCase
         $this->assertDatabaseHas('work_assignments', ['id' => $this->assignment, 'delivery_generation' => 2, 'confirmed_progress' => 0]);
         $this->actingAs($this->employee)->getJson('/api/delivery/workspace')->assertJsonCount(0, 'tasks')->assertJsonCount(0, 'submissions');
         $this->putJson('/api/delivery/tasks/'.$task.'/progress', ['version' => 3, 'reported_progress' => 40, 'progress_note' => 'Old task'])->assertConflict();
-        $this->assertDatabaseCount('delivery_tasks', 3);
+        $this->assertDatabaseCount('delivery_tasks', 4);
         $this->assertDatabaseCount('task_submissions', 1);
     }
 

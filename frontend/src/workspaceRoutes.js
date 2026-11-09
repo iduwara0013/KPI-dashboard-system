@@ -1,6 +1,6 @@
 const pages = {
   admin: ['overview', 'people', 'departments', 'reporting', 'access', 'activity'],
-  planning: ['overview', 'plans', 'history', 'reviewers', 'allocations'],
+  planning: ['overview', 'plans', 'history', 'allocations'],
   md: ['overview', 'departments', 'hofs', 'work'],
   hof: ['overview', 'breakdown', 'activities', 'own', 'delegated', 'team', 'personal'],
   delivery: ['overview', 'activities', 'kpis', 'tasks', 'reviews', 'team', 'personal'],
@@ -29,7 +29,7 @@ export function resolveWorkspace(pathname, user) {
     md: role === 'md',
     hof,
     delivery,
-    display: role === 'md' || hof,
+    display: role === 'md' || (member && user.workspaces?.some(role => ['hof', 'manager'].includes(role))),
     'kpi-results': ['md', 'plan_editor', 'member'].includes(role),
   };
 
@@ -41,8 +41,7 @@ export function resolveWorkspace(pathname, user) {
   const [workspace, page = workspace === 'delivery' ? defaultDeliveryPage(user) : 'overview', ...extra]
     = path === '/' ? [home] : path.slice(1).split('/');
   if (extra.length || !Object.hasOwn(pages, workspace) || !pages[workspace].includes(page)) return { error: 'not_found' };
-  const managerOnly = workspace === 'delivery' && ['overview', 'activities', 'team'].includes(page);
-  const editorOnly = workspace === 'planning' && ['reviewers', 'allocations'].includes(page);
-  if (!access[workspace] || (managerOnly && !user.workspaces?.includes('manager')) || (editorOnly && role !== 'plan_editor')) return { error: 'forbidden' };
+  const editorOnly = workspace === 'planning' && page === 'allocations';
+  if (!access[workspace] || (editorOnly && role !== 'plan_editor')) return { error: 'forbidden' };
   return { workspace, page };
 }

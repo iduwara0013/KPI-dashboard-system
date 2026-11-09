@@ -80,19 +80,14 @@ class MonthlyKpiResultTest extends TestCase
         $this->assertDatabaseCount('monthly_kpi_submissions', 2);
     }
 
-    public function test_hof_owned_kpi_requires_an_independent_reviewer_and_pins_its_target(): void
+    public function test_hof_confirms_own_monthly_result_and_preserves_its_target(): void
     {
         $reviewer = $this->person('EMP002');
         $row = $this->actingAs($this->hof)->getJson('/api/kpi-results/workspace')
-            ->assertJsonPath('rows.0.can_submit', false)->json('rows.0');
+            ->assertJsonPath('rows.0.can_submit', true)->assertJsonPath('rows.0.self_confirm', true)->json('rows.0');
         $payload = [...$this->context($row), 'month' => 11, 'attempt' => 0, 'actual_value' => 0, 'evidence' => 'Monitoring report.'];
-        $this->postJson('/api/kpi-results/submit', $payload)->assertUnprocessable();
         $assign = [...$this->context($row), 'reviewer_id' => $reviewer->id];
-        $this->postJson('/api/kpi-results/reviewer', $assign)->assertForbidden();
-        $this->actingAs($this->editor)->postJson('/api/kpi-results/reviewer', [...$assign, 'reviewer_id' => $this->hof->id])->assertUnprocessable();
-        $this->postJson('/api/kpi-results/reviewer', $assign)->assertOk();
-        $this->actingAs($this->hof)->postJson('/api/kpi-results/submit', $payload)->assertConflict();
-        $row = $this->getJson('/api/kpi-results/workspace')->assertJsonPath('rows.0.can_submit', true)->json('rows.0');
+        $this->postJson('/api/kpi-results/reviewer', $assign)->assertNotFound();
         $this->postJson('/api/kpi-results/submit', [...$payload, ...$this->context($row)])->assertCreated();
 
         $snapshot = DB::table('performance_plan_versions')->where('plan_id', $this->plan)->where('version', 2)->first();
@@ -104,9 +99,11 @@ class MonthlyKpiResultTest extends TestCase
         ]);
         DB::table('performance_plans')->where('id', $this->plan)->update(['published_revision' => 3]);
 
-        $fresh = $this->actingAs($reviewer)->getJson('/api/kpi-results/workspace')->assertJsonPath('rows.0.can_review', true)
+        $this->actingAs($reviewer)->getJson('/api/kpi-results/workspace')->assertJsonCount(0, 'rows');
+        $fresh = $this->actingAs($this->hof)->getJson('/api/kpi-results/workspace')->assertJsonPath('rows.0.can_review', false)
+            ->assertJsonPath('rows.0.status', 'approved')
             ->assertJsonPath('rows.0.target', 95)->assertJsonPath('rows.0.actual', 0)->json('rows.0');
-        $this->postJson('/api/kpi-results/review', [...$this->context($fresh), 'month' => 11, 'attempt' => 1, 'decision' => 'approved'])->assertOk();
+        $this->postJson('/api/kpi-results/review', [...$this->context($fresh), 'month' => 11, 'attempt' => 1, 'decision' => 'approved'])->assertForbidden();
         $this->getJson('/api/kpi-results/workspace?period=2026-10')->assertJsonPath('rows.0.target', 99);
 
         $document['kpas'][0]['kpis'][0]['frequency'] = 'Annually';

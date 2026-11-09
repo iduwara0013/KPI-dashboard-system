@@ -35,6 +35,7 @@ class PersonalAllocationController extends Controller
             }
             $covered[] = $kpi['plan_id'].':'.$kpi['kpi_code'];
             $sources[] = $this->source('kpi:'.$kpi['delegation']->id.':'.$kpi['delegation']->generation, 'Linked KPA · delegated KPI', $kpi['kpi_title'], $kpi['department_id'], $kpi['valid'], $kpi['source_signature'], $kpi['confirmed_progress']);
+            $sources[array_key_last($sources)]['contribution_weight'] = $kpi['personal_weight'];
         }
         foreach (DB::table('work_assignments')->where('assignee_id', $owner)->where('recipient_role', 'manager')->get() as $assignment) {
             $context = app(DeliveryController::class)->context($assignment);
@@ -43,6 +44,7 @@ class PersonalAllocationController extends Controller
                 continue;
             }
             $sources[] = $this->source('assignment:'.$assignment->id.':'.$assignment->delivery_generation, 'Assigned activity', $row['activity'], $row['department_id'], $context['valid'], $row['source_signature'], $context['valid'] ? (float) $assignment->confirmed_progress : 0);
+            $sources[array_key_last($sources)]['contribution_weight'] = $row['personal_weight'];
         }
         foreach (DB::table('delivery_tasks')->where('assignee_id', $owner)->where('is_active', true)->get() as $task) {
             $assignment = DB::table('work_assignments')->find($task->assignment_id);
@@ -54,9 +56,28 @@ class PersonalAllocationController extends Controller
             if (! $row || $row['year'] !== $year || in_array($row['plan_id'].':'.$row['kpi_code'], $covered, true)) {
                 continue;
             }
-            $valid = $context['valid'] && app(DeliveryController::class)->employeeEligible($owner, $assignment);
+            $contribution = (float) $task->weight;
+            $ancestor = $task;
+            $duplicate = false;
+            while ($ancestor->parent_task_id !== null) {
+                $previousId = (int) $ancestor->id;
+                $ancestor = DB::table('delivery_tasks')->find($ancestor->parent_task_id);
+                if (! $ancestor || (int) $ancestor->id >= $previousId) {
+                    $duplicate = true;
+                    break;
+                }
+                if ((int) $ancestor->assignee_id === $owner) {
+                    $duplicate = true;
+                }
+                $contribution *= (float) $ancestor->weight;
+            }
+            if ($duplicate) {
+                continue;
+            }
+            $valid = $context['valid'] && app(DeliveryController::class)->taskEligible($task, $assignment);
             $token = $row['source_signature'].':'.$task->title.':'.$task->weight.':'.$task->reviewer_id;
-            $sources[] = $this->source('task:'.$task->id.':'.$assignment->delivery_generation, $assignment->recipient_role === 'employee' ? 'Direct HOF work' : 'Employee task', $task->title, $row['department_id'], $valid, $token, $valid && $task->status === 'approved' ? 100 : 0);
+            $sources[] = $this->source('task:'.$task->id.':'.$assignment->delivery_generation, $assignment->recipient_role === 'employee' ? 'Direct HOF work' : 'Employee task', $task->title, $row['department_id'], $valid, $token, $valid ? (float) $task->confirmed_progress : 0);
+            $sources[array_key_last($sources)]['contribution_weight'] = $row['personal_weight'] * $contribution;
         }
         foreach (DB::table('performance_plans')->where('owner_id', $owner)->where('year', $year)->whereNotNull('published_revision')->get() as $plan) {
             $rows = app(KpiAssignmentController::class)->rowsForPlan($plan);
@@ -66,6 +87,7 @@ class PersonalAllocationController extends Controller
                 $progress = $group->sum(fn ($row) => $row['kpi_weight'] * $row['activity_weight'] * (($row['source_changed'] || ! $row['assignee_eligible']) ? 0 : (float) ($row['assignment']->confirmed_progress ?? 0)));
                 $source = $this->source('hof:'.$plan->id.':'.$first['kpa_code'], 'HOF responsibility', $first['kpa_title'], $first['department_id'], $active, json_encode($group->pluck('source_signature')->all()), $progress);
                 $source['suggested_weight'] = $first['kpa_weight'];
+                $source['contribution_weight'] = $first['kpa_weight'];
                 $sources[] = $source;
             }
         }
@@ -83,7 +105,21 @@ class PersonalAllocationController extends Controller
     private function source(string $key, string $kind, string $title, int $department, bool $valid, string $token, float $progress): array
     {
         return ['key' => $key, 'kind' => $kind, 'title' => $title, 'department_id' => $department, 'valid' => $valid,
-            'token' => hash('sha256', $token), 'confirmed_progress' => $progress, 'suggested_weight' => null];
+            'token' => hash('sha256', $token), 'confirmed_progress' => $progress, 'suggested_weight' => null, 'contribution_weight' => 0];
+    }
+
+    public function liveScore(int $owner, int $year): array
+    {
+        $sources = $this->sources($owner, $year);
+        $total = array_sum(array_column($sources, 'contribution_weight'));
+        $entries = array_map(fn ($source) => [
+            ...$source, 'weight' => $total > 0 ? $source['contribution_weight'] / $total : 0,
+        ], $sources);
+
+        return [
+            ...$this->score($entries, $sources), 'entries' => $entries,
+            'responsibility_count' => count($sources),
+        ];
     }
 
     private function score(?array $entries, array $sources): array
@@ -135,6 +171,7 @@ class PersonalAllocationController extends Controller
         return response()->json(['id' => $record->id ?? null, 'owner_id' => $owner, 'year' => $year, 'version' => (int) ($record->version ?? 0), 'status' => $record->status ?? 'not_started',
             'published_version' => $record->published_version ?? null, 'can_publish' => $editor, 'entries' => $entries,
             'published_entries' => $published, 'score' => $this->score($published, $sources),
+            'live_score' => $this->liveScore($owner, $year),
             'history' => $record ? DB::table('personal_allocation_versions as v')->join('users as u', 'u.id', '=', 'v.actor_id')->where('allocation_id', $record->id)->orderByDesc('v.id')->get(['v.version', 'v.event', 'v.snapshot', 'v.review_note', 'v.created_at', 'u.name as actor_name']) : [],
         ]);
     }

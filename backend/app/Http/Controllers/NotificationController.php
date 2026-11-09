@@ -53,10 +53,14 @@ class NotificationController extends Controller
                 continue;
             }
             $assignment = DB::table('work_assignments')->find($task->assignment_id);
-            if (! app(DeliveryController::class)->context($assignment)['valid'] || ! app(DeliveryController::class)->employeeEligible((int) $task->assignee_id, $assignment)) {
+            if (! app(DeliveryController::class)->context($assignment)['valid'] || ! app(DeliveryController::class)->taskEligible($task, $assignment)) {
                 continue;
             }
-            $review = (int) $task->reviewer_id === (int) $user->id;
+            $selfConfirm = app(DeliveryController::class)->selfConfirmable($task, $assignment);
+            if ($selfConfirm && (int) $task->assignee_id !== (int) $user->id) {
+                continue;
+            }
+            $review = ! $selfConfirm && (int) $task->reviewer_id === (int) $user->id && (int) $task->assignee_id !== (int) $user->id;
             if ($review && $task->status !== 'submitted') {
                 continue;
             }

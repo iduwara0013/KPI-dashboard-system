@@ -224,38 +224,26 @@ class MixedAssignmentsTest extends TestCase
         $this->assertSame(100, $published['score']['confirmed_completion']);
     }
 
-    public function test_hof_own_work_needs_independent_designated_review_and_invalid_reviewer_suppresses_score(): void
+    public function test_hof_confirms_own_work_without_an_independent_reviewer(): void
     {
         $id = $this->assignActivity('ACT-A', $this->hof);
-        $reviewer = $this->user('EMP002');
-        $endpoint = '/api/planning/hof-reviewers/'.$id;
-        $this->postJson($endpoint, ['version' => 1, 'reviewer_id' => $reviewer->id])->assertForbidden();
-        $this->actingAs($this->editor)->postJson($endpoint, ['version' => 1, 'reviewer_id' => $this->hof->id])->assertUnprocessable();
-        $this->postJson($endpoint, ['version' => 1, 'reviewer_id' => $this->employee->id])->assertUnprocessable();
-        $this->postJson($endpoint, ['version' => 1, 'reviewer_id' => $reviewer->id])->assertOk();
-        $this->postJson($endpoint, ['version' => 1, 'reviewer_id' => $reviewer->id])->assertConflict();
         $task = DB::table('delivery_tasks')->where('assignment_id', $id)->first();
-        $this->actingAs($this->hof)->getJson('/api/delivery/workspace')->assertJsonCount(1, 'tasks');
-        $this->putJson('/api/hof/assignments/'.$id.'/progress', ['version' => 2, 'reported_progress' => 100, 'progress_note' => 'Bypass attempt'])->assertConflict();
-        $this->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => 1, 'evidence' => 'HOF coordination completed with supporting records.'])->assertOk();
-        $submission = DB::table('task_submissions')->where('task_id', $task->id)->value('id');
-        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertForbidden();
-        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertForbidden();
-        $this->actingAs($reviewer)->getJson('/api/delivery/workspace')->assertJsonCount(1, 'reviews');
-        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'needs_changes', 'review_note' => 'Include the signed record.'])->assertOk();
-        $this->actingAs($this->hof)->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => 3, 'evidence' => 'Signed coordination record provided.'])->assertOk();
-        $submission = DB::table('task_submissions')->where('task_id', $task->id)->orderByDesc('id')->value('id');
-        $this->actingAs($reviewer)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 4, 'decision' => 'approved'])->assertOk();
-        $this->actingAs($this->hof)->getJson('/api/hof/workspace')->assertJsonPath('activities.0.assignment.confirmed_progress', 100);
-        $this->assertEquals(40, $this->allocation($this->hof)['entries'][0]['confirmed_progress']);
+        $reviewer = $this->user('EMP002');
+        $this->actingAs($this->editor)->postJson('/api/planning/hof-reviewers/'.$id, [
+            'version' => 1, 'reviewer_id' => $reviewer->id,
+        ])->assertNotFound();
+        $this->actingAs($this->hof)->getJson('/api/delivery/workspace')
+            ->assertJsonPath('tasks.0.self_confirm', true)->assertJsonPath('tasks.0.reviewer_id', null);
+        $this->postJson('/api/delivery/tasks/'.$task->id.'/submit', [
+            'version' => 1, 'evidence' => 'HOF coordination completed with supporting records.',
+        ])->assertOk();
+        $this->assertDatabaseHas('delivery_tasks', ['id' => $task->id, 'status' => 'approved', 'confirmed_progress' => 100]);
+        $this->assertDatabaseHas('task_submissions', ['task_id' => $task->id, 'decision' => 'approved', 'reviewed_by' => null]);
+        $this->getJson('/api/hof/workspace')->assertJsonPath('activities.0.assignment.confirmed_progress', 100);
+        $this->actingAs($reviewer)->getJson('/api/delivery/workspace')->assertJsonCount(0, 'reviews');
         $reviewer->update(['is_active' => false]);
-        $this->actingAs($this->hof)->getJson('/api/hof/workspace')->assertJsonPath('activities.0.assignment.confirmed_progress', 0);
-        $this->assertEquals(0, $this->allocation($this->hof)['entries'][0]['confirmed_progress']);
-        $version = DB::table('work_assignments')->where('id', $id)->value('version');
-        $this->actingAs($this->editor)->postJson($endpoint, ['version' => $version, 'reviewer_id' => $this->user('EMP003')->id])->assertOk();
-        $this->assertDatabaseCount('task_submissions', 2);
-        $this->assertDatabaseHas('delivery_tasks', ['id' => $task->id, 'is_active' => false]);
-        $this->assertDatabaseHas('work_assignments', ['id' => $id, 'confirmed_progress' => 0]);
+        $this->actingAs($this->hof)->getJson('/api/hof/workspace')->assertJsonPath('activities.0.assignment.confirmed_progress', 100);
+        $this->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => 2, 'evidence' => 'Duplicate confirmation.'])->assertConflict();
     }
 
     public function test_full_kpi_can_go_directly_to_employee_without_duplicate_personal_entries(): void
@@ -265,7 +253,22 @@ class MixedAssignmentsTest extends TestCase
         $this->actingAs($this->employee)->getJson('/api/delivery/workspace')->assertJsonCount(2, 'tasks')->assertJsonCount(1, 'delegated_kpis')->assertJsonCount(0, 'managed');
         $this->assertCount(1, $this->allocation($this->employee)['entries']);
         $assignment = DB::table('work_assignments')->first();
-        $this->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version, 'tasks' => [['title' => 'Tampered task', 'assignee_id' => $this->employee->id, 'weight' => 1]]])->assertForbidden();
+        $this->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version, 'tasks' => [['title' => 'My delivery work', 'assignee_id' => $this->employee->id, 'weight' => 1]]])->assertOk();
+    }
+
+    public function test_hof_can_confirm_a_pending_submission_created_under_the_old_reviewer_flow(): void
+    {
+        $id = $this->assignActivity('ACT-A', $this->hof);
+        $task = DB::table('delivery_tasks')->where('assignment_id', $id)->first();
+        DB::table('delivery_tasks')->where('id', $task->id)->update([
+            'reviewer_id' => $this->user('EMP002')->id, 'status' => 'submitted', 'reported_progress' => 100, 'version' => 2,
+        ]);
+        $old = DB::table('task_submissions')->insertGetId([
+            'task_id' => $task->id, 'submitted_by' => $this->hof->id, 'evidence' => 'Old pending evidence.', 'submitted_at' => now(),
+        ]);
+        $this->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => 2, 'evidence' => 'HOF confirms the completed coordination.'])->assertOk();
+        $this->assertDatabaseHas('task_submissions', ['id' => $old, 'decision' => 'superseded']);
+        $this->assertDatabaseHas('work_assignments', ['id' => $id, 'confirmed_progress' => 100]);
     }
 
     public function test_md_dashboard_tracks_approved_published_work_and_pending_reviews_without_duplicates(): void

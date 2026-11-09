@@ -42,8 +42,9 @@ class MonthlyKpiResultController extends Controller
                 $actual = $latest ? (float) $latest->actual_value : null;
                 $direction = $latest->direction ?? $kpi['direction'];
                 $canReview = $status === 'submitted' && $kpi['reviewer_id'] === $user->id && (int) $latest->submitted_by !== $user->id;
-                $canSubmit = ! $future && $kpi['reporter_id'] === $user->id && $kpi['reviewer_id'] !== null
-                    && $this->canSubmit($latest, $user->id);
+                $selfConfirm = $kpi['reporter_id'] === (int) $plan->owner_id && $kpi['active_hof'];
+                $canSubmit = ! $future && $kpi['reporter_id'] === $user->id
+                    && ($this->canSubmit($latest, $user->id) || ($selfConfirm && $latest?->status === 'submitted'));
 
                 $rows[] = [
                     'plan_id' => (int) $plan->id, 'plan_code' => $plan->code, 'kpi_code' => $code,
@@ -54,7 +55,7 @@ class MonthlyKpiResultController extends Controller
                     'direction' => $direction, 'gap' => $actual === null ? null : round($direction === 'lower' ? $target - $actual : $actual - $target, 4),
                     'status' => $status, 'attempt' => (int) ($latest->attempt ?? 0), 'archived' => $kpi['context'] === null,
                     'can_submit' => $canSubmit, 'can_review' => $canReview,
-                    'can_assign_reviewer' => $editor && $kpi['reporter_id'] === (int) $plan->owner_id,
+                    'can_assign_reviewer' => false, 'self_confirm' => $selfConfirm,
                     'context' => $kpi['context'],
                     'history' => $history->map(fn ($item) => [
                         'attempt' => (int) $item->attempt, 'actual' => (float) $item->actual_value, 'status' => $item->status,
@@ -66,12 +67,7 @@ class MonthlyKpiResultController extends Controller
             }
         }
 
-        $reviewers = $editor ? DB::table('users as u')->join('department_memberships as m', 'm.user_id', '=', 'u.id')
-            ->join('departments as d', 'd.id', '=', 'm.department_id')->where('u.is_active', true)
-            ->where('u.system_role', 'member')->where('m.responsibility', 'hof')->where('d.is_active', true)
-            ->select('u.id', 'u.name')->distinct()->orderBy('u.name')->get() : [];
-
-        return response()->json(['period' => $period, 'future' => $future, 'rows' => $rows, 'reviewers' => $reviewers]);
+        return response()->json(['period' => $period, 'future' => $future, 'rows' => $rows, 'reviewers' => []]);
     }
 
     public function submit(Request $request): JsonResponse
@@ -84,14 +80,15 @@ class MonthlyKpiResultController extends Controller
             'evidence' => ['required', 'string', 'max:2000'],
             'evidence_url' => ['nullable', 'url:http,https', 'max:1000'],
         ]);
-        DB::transaction(function () use ($request, $data): void {
+        $selfConfirmed = DB::transaction(function () use ($request, $data): bool {
             [$plan, $kpi] = $this->lockedContext($data);
             $user = $request->user()->id;
             abort_unless($kpi['reporter_id'] === $user, 403, 'Only the KPI owner can submit a result.');
-            abort_unless($kpi['reviewer_id'] !== null, 422, 'Assign an independent reviewer before submitting.');
+            $selfConfirm = $user === (int) $plan->owner_id && $kpi['active_hof'];
             abort_if(sprintf('%04d-%02d', $plan->year, $data['month']) > now('Asia/Colombo')->format('Y-m'), 422, 'Choose a current or past month.');
             $latest = $this->latest($data);
-            abort_unless((int) ($latest->attempt ?? 0) === (int) $data['attempt'] && $this->canSubmit($latest, $user), 409, 'The monthly result changed. Refresh before submitting.');
+            abort_unless((int) ($latest->attempt ?? 0) === (int) $data['attempt']
+                && ($this->canSubmit($latest, $user) || ($selfConfirm && $latest?->status === 'submitted')), 409, 'The monthly result changed. Refresh before submitting.');
             if ($latest?->status === 'submitted') {
                 DB::table('monthly_kpi_submissions')->where('id', $latest->id)->update(['status' => 'superseded']);
             }
@@ -101,11 +98,15 @@ class MonthlyKpiResultController extends Controller
                 'target_value' => $latest->target_value ?? $kpi['target_value'],
                 'target_unit' => $latest->target_unit ?? $kpi['target_unit'], 'direction' => $latest->direction ?? $kpi['direction'],
                 'actual_value' => $data['actual_value'], 'evidence' => $data['evidence'], 'evidence_url' => $data['evidence_url'] ?? null,
-                'submitted_by' => $user, 'status' => 'submitted', 'created_at' => now(),
+                'submitted_by' => $user, 'status' => $selfConfirm ? 'approved' : 'submitted', 'created_at' => now(),
+                'reviewed_by' => null, 'reviewed_at' => $selfConfirm ? now() : null,
+                'review_note' => $selfConfirm ? 'Monthly result confirmed by the HOF.' : null,
             ]);
+
+            return $selfConfirm;
         });
 
-        return response()->json(['message' => 'Monthly result submitted for review.'], 201);
+        return response()->json(['message' => $selfConfirmed ? 'Monthly result confirmed by the HOF.' : 'Monthly result submitted for review.'], 201);
     }
 
     public function review(Request $request): JsonResponse
@@ -131,26 +132,6 @@ class MonthlyKpiResultController extends Controller
         });
 
         return response()->json(['message' => $data['decision'] === 'approved' ? 'Monthly result approved.' : 'Correction requested.']);
-    }
-
-    public function assignReviewer(Request $request): JsonResponse
-    {
-        $this->authorizeWorkspace($request);
-        abort_unless($request->user()->system_role === 'plan_editor', 403);
-        $data = $request->validate([...$this->contextRules(), 'reviewer_id' => ['required', 'integer']]);
-        DB::transaction(function () use ($request, $data): void {
-            [$plan, $kpi] = $this->lockedContext($data);
-            abort_unless($kpi['reporter_id'] === (int) $plan->owner_id, 422, 'Delegated KPIs are reviewed by the assigning HOF.');
-            abort_unless(HofReviewController::eligible((int) $data['reviewer_id'], (int) $plan->owner_id), 422, 'Choose another active HOF.');
-            $key = ['plan_id' => $plan->id, 'kpi_code' => $data['kpi_code']];
-            DB::table('monthly_kpi_reviewers')->upsert([[...$key, 'reviewer_id' => $data['reviewer_id'], 'created_at' => now(), 'updated_at' => now()]], array_keys($key), ['reviewer_id', 'updated_at']);
-            DB::table('admin_activity')->insert([
-                'actor_id' => $request->user()->id, 'action' => 'monthly_kpi.reviewer_assigned', 'subject' => $data['kpi_code'],
-                'before_data' => json_encode(['reviewer_id' => $kpi['reviewer_id']]), 'after_data' => json_encode(['reviewer_id' => $data['reviewer_id']]), 'created_at' => now(),
-            ]);
-        });
-
-        return response()->json(['message' => 'Monthly KPI reviewer saved.']);
     }
 
     private function authorizeWorkspace(Request $request): void
@@ -195,7 +176,6 @@ class MonthlyKpiResultController extends Controller
             return [];
         }
         $delegations = DB::table('kpi_delegations')->where('plan_id', $plan->id)->get();
-        $reviewers = DB::table('monthly_kpi_reviewers')->where('plan_id', $plan->id)->pluck('reviewer_id', 'kpi_code');
         $departments = DB::table('departments')->where('is_active', true)->pluck('name', 'id');
         $activeHofDepartments = $this->activeHofDepartments((int) $plan->owner_id);
         $rows = [];
@@ -205,11 +185,7 @@ class MonthlyKpiResultController extends Controller
             $activeHof = $activeHofDepartments->contains($kpi['department_id']);
             $delegation = $kpi['delegation'];
             $reporter = $activeHof && (! $delegation || $kpi['valid']) ? (int) ($delegation->assignee_id ?? $hof) : null;
-            $reviewer = null;
-            if ($reporter !== null) {
-                $selected = (int) ($reviewers[$code] ?? 0);
-                $reviewer = $reporter !== $hof ? $hof : (HofReviewController::eligible($selected, $hof) ? $selected : null);
-            }
+            $reviewer = $reporter !== null && $reporter !== $hof ? $hof : null;
             $rows[$code] = [
                 ...$kpi, 'department' => $departments[$kpi['department_id']] ?? 'Inactive department',
                 'active_hof' => $activeHof, 'reporter_id' => $reporter, 'reviewer_id' => $reviewer,

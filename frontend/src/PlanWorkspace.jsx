@@ -11,8 +11,6 @@ import { request } from './api.js';
 import { Avatar, Badge, Brand, Empty, ErrorBox, Field, Modal, MonthlyKpiLink, RouteLink } from './components.jsx';
 import './planning.css';
 import PersonalAllocationWorkspace from './PersonalAllocationWorkspace.jsx';
-import HofReviewers from './HofReviewers.jsx';
-import ExcelPlanImport from './ExcelPlanImport.jsx';
 import { workspacePath } from './workspaceRoutes.js';
 
 const emptyWorkspace = { plans: [], owners: [], departments: [], memberships: [], can_edit: false };
@@ -97,7 +95,6 @@ export default function PlanWorkspace({ session, onSession, page, onWork }) {
   const years = [...new Set(data.plans.map(plan => plan.year))].sort((a, b) => b - a);
   const canCreate = editor;
   if (page === 'allocations') return <PersonalAllocationWorkspace session={session} onBack={() => navigate('overview')} />;
-  if (page === 'reviewers' && editor) return <HofReviewers onBack={() => navigate('overview')} />;
 
   return <div className="app-shell planning-shell">
     {mobileNav && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
@@ -105,7 +102,6 @@ export default function PlanWorkspace({ session, onSession, page, onWork }) {
       <RouteLink className="brand" href="/planning/overview" aria-label="CPSTL performance planning overview" onNavigate={() => navigate('overview')}><Brand /></RouteLink>
       <div className="workspace-label"><span className="workspace-dot" /> PERFORMANCE WORKSPACE</div><div className="nav-caption">{editor ? 'PLAN EDITOR' : 'MY PERFORMANCE'}</div>
       <nav aria-label="Performance planning">{[
-        ...(editor ? [['reviewers', 'HOF work reviewers', ShieldCheck]] : []),
         ['overview', 'Overview', LayoutDashboard], ['plans', editor ? 'Performance plans' : 'My published plans', FolderTree], ['history', 'Plan history', History],
       ].map(([id, label, Icon]) => <RouteLink key={id} href={workspacePath('planning', id)} aria-current={page === id ? 'page' : undefined} className={`nav-item ${page === id && !detail ? 'nav-active' : ''}`} onNavigate={() => navigate(id)}><Icon size={19} /><span>{label}</span>{id === 'plans' && <span className="nav-count">{data.plans.length}</span>}</RouteLink>)}
         {onWork && <button className="nav-item" onClick={onWork}><ArrowLeft size={19} /><span>Work dashboard</span></button>}
@@ -141,24 +137,14 @@ export default function PlanWorkspace({ session, onSession, page, onWork }) {
         <footer className="workspace-footer"><span><span className="footer-dot" /> CPSTL Performance Management</span><span>Ceylon Petroleum Storage Terminals Limited</span></footer>
       </main>
     </div>
-    {modal?.kind === 'create' && <Modal title="Create a personal plan" subtitle="Create a draft manually or import an employee’s Excel plan." onClose={() => setModal(null)}>
-      {!modal.mode && <div className="modal-body">
-        <div className="form-grid">
-          <button className="btn btn-secondary" disabled={!data.owners.length} onClick={() => setModal({ kind: 'create', mode: 'manual' })}><Plus size={17} />Create manually</button>
-          <button className="btn btn-primary" onClick={() => setModal({ kind: 'create', mode: 'excel' })}><FileSpreadsheet size={17} />Import Excel</button>
-        </div>
-        {!data.owners.length && <p className="form-note">Manual plans require an active person with an active department assignment.</p>}
-      </div>}
-      {modal.mode === 'manual' && <CreatePlanForm data={data} onClose={() => setModal(null)}
-        onCreated={async id => { setModal(null); await saved(id, 'Draft plan created. Add its KPAs and targets.'); }} />}
-      {modal.mode === 'excel' && <ExcelPlanImport plans={data.plans} onClose={() => setModal(null)}
-        onCreated={async id => { setModal(null); await saved(id, 'Excel draft saved. Review the source targets and activities.'); }}
-        onExisting={async id => { setModal(null); await openPlan(id); }} />}
+    {modal?.kind === 'create' && <Modal title="Create a personal plan" subtitle="Choose a department, select a person and set the performance year." onClose={() => setModal(null)}>
+      <CreatePlanForm data={data} onClose={() => setModal(null)}
+        onCreated={async id => { setModal(null); await saved(id, 'Draft plan created. Add its KPAs and targets.'); }} />
     </Modal>}
     {modal?.kind === 'remove' && <RemovePlanDialog plan={modal.plan} onClose={() => setModal(null)} onRemoved={() => {
       setData(current => ({ ...current, plans: current.plans.filter(plan => plan.id !== modal.plan.id) }));
       setModal(null);
-      setToast('Draft plan removed.');
+      setToast('Plan deleted.');
       refresh().catch(() => {});
     }} />}
     {modal?.kind === 'history' && detail && <Modal title="Plan revision history" subtitle={`${detail.plan.code} · ${detail.plan.title}`} onClose={() => setModal(null)}><VersionHistory versions={detail.versions} data={data} /><div className="modal-footer"><button className="btn btn-primary" onClick={() => setModal(null)}>Done <Check size={16} /></button></div></Modal>}
@@ -177,39 +163,64 @@ function PlanTable({ plans, data, editor, onOpen, onCreate, canCreate, onRemove 
   if (!plans.length) return <Empty icon={FolderTree} title={editor ? 'Your next plan starts here' : 'No published plans yet'} text={editor ? 'Create a draft for a person, then add their KPAs, KPI targets and activities.' : 'Your plan editor will publish your agreed responsibilities here.'} action={canCreate ? <button className="btn btn-primary" onClick={onCreate}><Plus size={16} /> Create your first plan</button> : null} />;
   return <div className="table-scroll"><table className="plan-table"><thead><tr><th>Personal plan</th><th>Plan owner</th><th>Structure</th><th>Allocation</th><th>Status</th><th><span className="sr-only">Plan actions</span></th></tr></thead><tbody>{plans.map(plan => <tr key={plan.id}><td><button className="plan-name" onClick={() => onOpen(plan.id)}><span className="plan-document-icon"><FolderTree size={21} /></span><span><strong>{plan.title}</strong><small>{plan.code} · {plan.year}</small></span></button></td><td><div className="head-name"><Avatar name={ownerOf(data, plan.owner_id)?.name} small /><span>{ownerOf(data, plan.owner_id)?.name || 'Owner unavailable'}</span></div></td><td><span className="plan-structure">{plan.kpa_count} KPAs <span>·</span> {plan.kpi_count} KPIs<small>{plan.activity_count} activities</small></span></td><td><Allocation total={plan.weight_total} empty={!plan.kpa_count} /></td><td><PlanStatus plan={plan} /></td><td><div className="plan-row-actions">
     <button className="icon-button" aria-label={`Open ${plan.code}`} onClick={() => onOpen(plan.id)}><ArrowRight size={17} /></button>
-    {onRemove && plan.status === 'draft' && plan.published_revision === null && <button className="icon-button danger" title="Remove draft" aria-label={`Remove draft ${plan.code}`} onClick={() => onRemove(plan)}><Trash2 size={17} /></button>}
+    {onRemove && <button className="icon-button danger" title="Delete plan" aria-label={`Delete plan ${plan.code}`} onClick={() => onRemove(plan)}><Trash2 size={17} /></button>}
   </div></td></tr>)}</tbody></table></div>;
 }
 
 function RemovePlanDialog({ plan, onClose, onRemoved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(true);
   const removing = useRef(false);
 
+  async function load() {
+    setLoading(true);
+    setError(null);
+    setPreview(null);
+    try {
+      setPreview(await request('/planning/plans/' + plan.id + '/deletion'));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
   async function remove() {
-    if (removing.current) return;
+    if (removing.current || !preview) return;
     removing.current = true;
     setBusy(true);
     setError(null);
     try {
-      await request('/planning/plans/' + plan.id, { method: 'DELETE', body: { revision: plan.revision } });
+      await request('/planning/plans/' + plan.id, {
+        method: 'DELETE', body: { revision: preview.revision, deletion_token: preview.deletion_token },
+      });
       onRemoved();
     } catch (err) {
       setError(err);
+      setPreview(null);
     } finally {
       removing.current = false;
       setBusy(false);
     }
   }
 
-  return <Modal title="Remove draft plan?" subtitle={plan.code} onClose={() => { if (!removing.current) onClose(); }}>
+  const labels = { items: 'KPAs, KPIs and activities', revisions: 'Saved plan revisions', assignments: 'Activity assignments',
+    tasks: 'Tasks and subtasks', submissions: 'Task submissions', kpi_assignments: 'KPI assignments', monthly_results: 'Monthly results' };
+  return <Modal title="Delete this plan?" subtitle={preview?.plan.code || plan.code} onClose={() => { if (!removing.current) onClose(); }}>
     <div className="modal-body">
       <ErrorBox error={error} />
-      <p className="confirm-copy">This permanently removes <strong>{plan.title}</strong>, including its saved KPAs, KPIs, activities and draft revisions.</p>
+      {loading ? <p><LoaderCircle className="spin" size={18} /> Loading linked records…</p> : preview ? <>
+        <p className="confirm-copy">This permanently deletes <strong>{preview.plan.title}</strong> and all linked work listed below.</p>
+        <ul>{Object.entries(preview.counts).filter(([, count]) => count > 0).map(([key, count]) => <li key={key}>{labels[key]} · <strong>{count}</strong></li>)}</ul>
+        <p className="confirm-copy">The plan’s contribution is removed from live dashboards and personal performance calculations. This action cannot be undone.</p>
+      </> : <button className="btn btn-secondary" onClick={load}>Reload deletion details</button>}
     </div>
     <div className="modal-footer">
       <button className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button>
-      <button className="btn btn-primary" disabled={busy} onClick={remove}>{busy ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}Remove draft</button>
+      <button className="btn btn-primary" disabled={busy || loading || !preview} onClick={remove}>{busy ? <LoaderCircle className="spin" size={16} /> : <Trash2 size={16} />}Delete plan</button>
     </div>
   </Modal>;
 }
@@ -225,6 +236,7 @@ function Allocation({ total, empty = false, label }) {
 
 function CreatePlanForm({ data, onClose, onCreated }) {
   const currentYear = new Date().getFullYear();
+  const [departmentId, setDepartmentId] = useState('');
   const [form, setForm] = useState({ title: '', code: null, owner_id: '', year: currentYear, kpas: [] });
   const [error, setError] = useState(null), [busy, setBusy] = useState(false);
   async function submit(e) {
@@ -234,9 +246,59 @@ function CreatePlanForm({ data, onClose, onCreated }) {
     finally { setBusy(false); }
   }
   const selectedOwner = ownerOf(data, form.owner_id);
+  const owners = data.owners.filter(owner => data.memberships.some(membership =>
+    sameId(membership.user_id, owner.id) && sameId(membership.department_id, departmentId)));
   const departments = departmentsForOwner(data, form.owner_id);
   const code = form.code ?? (selectedOwner && form.year ? `PLAN-${form.year}-${selectedOwner.employee_number || selectedOwner.id}`.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 64) : '');
-  return <form onSubmit={submit}><div className="modal-body"><ErrorBox error={error} /><Field label="Plan title" required><input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} maxLength={180} placeholder="e.g. 2026 IT and digital services plan" required /></Field><div className="form-grid"><Field label="Plan owner" required><select value={form.owner_id} onChange={e => setForm({ ...form, owner_id: e.target.value })} required><option value="">Select a person</option>{data.owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name} · {owner.employee_number}</option>)}</select></Field><Field label="Performance year" required><input type="number" min="2000" max="2100" value={form.year} onChange={e => setForm({ ...form, year: e.target.value })} required /></Field></div><Field label="Plan ID" required hint="A permanent identifier. Letters, numbers, hyphens and underscores."><input value={code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') })} maxLength={64} placeholder="PLAN-2026-EMP001" required /></Field>{selectedOwner && <div className="selected-owner"><Avatar name={selectedOwner.name} /><div><strong>{selectedOwner.name}</strong><span>{selectedOwner.designation}</span><div className="owner-departments">{departments.map(dept => <Badge key={dept.id}>{dept.name}</Badge>)}</div></div></div>}<div className="form-note"><Target size={18} /><span>The selected person has one plan per year, with KPA weights adding up to 100%. You can save incomplete allocations as a draft.</span></div></div><div className="modal-footer"><button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={busy}>{busy ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />}Create draft</button></div></form>;
+  return <form onSubmit={submit}>
+    <div className="modal-body">
+      <ErrorBox error={error} />
+      <Field label="Department" required>
+        <select value={departmentId} required disabled={busy} onChange={event => {
+          setDepartmentId(event.target.value);
+          setForm(previous => ({ ...previous, owner_id: '' }));
+          setError(null);
+        }}>
+          <option value="">Select department</option>
+          {data.departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Plan title" required>
+        <input value={form.title} onChange={event => setForm({ ...form, title: event.target.value })}
+          maxLength={180} placeholder="e.g. 2026 IT and digital services plan" required />
+      </Field>
+      <div className="form-grid">
+        <Field label="Plan owner" required hint={departmentId ? `${owners.length} active people in this department.` : 'Choose a department to see its people.'}>
+          <select value={form.owner_id} disabled={busy || !departmentId || !owners.length}
+            onChange={event => setForm({ ...form, owner_id: event.target.value })} required>
+            <option value="">{departmentId ? owners.length ? 'Select a person' : 'No active people in this department' : 'Select department first'}</option>
+            {owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name} · {owner.employee_number}{owner.designation ? ` · ${owner.designation}` : ''}</option>)}
+          </select>
+        </Field>
+        <Field label="Performance year" required>
+          <input type="number" min="2000" max="2100" value={form.year}
+            onChange={event => setForm({ ...form, year: event.target.value })} required />
+        </Field>
+      </div>
+      <Field label="Plan ID" required hint="A permanent identifier. Letters, numbers, hyphens and underscores.">
+        <input value={code} onChange={event => setForm({ ...form, code: event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') })}
+          maxLength={64} placeholder="PLAN-2026-EMP001" required />
+      </Field>
+      {selectedOwner && <div className="selected-owner">
+        <Avatar name={selectedOwner.name} />
+        <div><strong>{selectedOwner.name}</strong><span>{selectedOwner.designation}</span>
+          <div className="owner-departments">{departments.map(department => <Badge key={department.id}>{department.name}</Badge>)}</div>
+        </div>
+      </div>}
+      <div className="form-note"><Target size={18} /><span>The selected person has one plan per year, with KPA weights adding up to 100%. You can save incomplete allocations as a draft.</span></div>
+    </div>
+    <div className="modal-footer">
+      <button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button>
+      <button className="btn btn-primary" disabled={busy || !departmentId || !owners.some(owner => sameId(owner.id, form.owner_id))}>
+        {busy ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />}Create draft
+      </button>
+    </div>
+  </form>;
 }
 
 function PlanEditor({ detail, data, onDirty, onBack, onSaved, onHistory }) {

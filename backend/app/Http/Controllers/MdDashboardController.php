@@ -32,7 +32,8 @@ class MdDashboardController extends Controller
                 $assignment = $row['assignment'];
                 $valid = $assignment && app(DeliveryController::class)->context($assignment)['valid'];
                 $tasks = $assignment ? DB::table('delivery_tasks')->where('assignment_id', $assignment->id)->where('generation', $assignment->delivery_generation)->where('is_active', true)->get() : collect();
-                $ready = $tasks->isNotEmpty() && abs($tasks->sum('weight') - 1) < 0.00005 && ! $tasks->contains(fn ($task) => ! app(DeliveryController::class)->employeeEligible((int) $task->assignee_id, $assignment));
+                $ready = $tasks->isNotEmpty() && abs($tasks->whereNull('parent_task_id')->sum('weight') - 1) < 0.00005
+                    && ! $tasks->contains(fn ($task) => ! app(DeliveryController::class)->taskEligible($task, $assignment));
                 $approved = $valid && $ready ? (float) $assignment->confirmed_progress : 0;
                 $due = $assignment?->due_date ? substr((string) $assignment->due_date, 0, 10) : $row['due_date'];
                 $pending = $valid && $ready ? $tasks->where('status', 'submitted')->count() : 0;
@@ -45,7 +46,13 @@ class MdDashboardController extends Controller
                     'approved' => $approved, 'reported' => $assignment ? (float) $assignment->reported_progress : 0,
                     'due_date' => $due, 'overdue' => $approved < 100 && $due && $due < now()->toDateString(),
                     'pending' => $pending, 'needs_review' => (bool) ($assignment && (! $valid || ($tasks->isNotEmpty() && ! $ready))),
-                    'tasks' => $tasks->map(fn ($task) => ['id' => $task->id, 'title' => $task->title, 'owner' => $people[$task->assignee_id]->name ?? 'Previous owner', 'reviewer' => $people[$task->reviewer_id]->name ?? 'Previous reviewer', 'weight' => (float) $task->weight, 'status' => $task->status, 'due_date' => $task->due_date ? substr((string) $task->due_date, 0, 10) : null])->all(),
+                    'tasks' => $tasks->map(fn ($task) => [
+                        'id' => $task->id, 'parent_task_id' => $task->parent_task_id, 'title' => $task->title,
+                        'owner' => $people[$task->assignee_id]->name ?? 'Previous owner',
+                        'reviewer' => app(DeliveryController::class)->selfConfirmable($task, $assignment) ? 'HOF confirmation' : ($people[$task->reviewer_id]->name ?? 'Previous reviewer'),
+                        'weight' => (float) $task->weight, 'confirmed_progress' => (float) $task->confirmed_progress,
+                        'status' => $task->status, 'due_date' => $task->due_date ? substr((string) $task->due_date, 0, 10) : null,
+                    ])->all(),
                 ];
             }
         }

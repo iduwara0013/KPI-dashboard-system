@@ -154,18 +154,75 @@ class PerformancePlanController extends Controller
         return response()->json(['id' => $plan]);
     }
 
+    public function deletionPreview(Request $request, int $plan): JsonResponse
+    {
+        $this->requireEditor($request);
+        $record = $this->findAuthorized($request, $plan);
+        $details = $this->deletionDetails($record);
+
+        return response()->json([
+            'plan' => ['id' => $plan, 'code' => $record->code, 'title' => $record->title, 'status' => $record->status],
+            'revision' => (int) $record->revision, 'counts' => $details['counts'], 'deletion_token' => $details['token'],
+        ]);
+    }
+
+    private function deletionDetails(stdClass $plan): array
+    {
+        $assignments = DB::table('work_assignments')->where('plan_id', $plan->id)->orderBy('id')
+            ->get(['id', 'version', 'delivery_generation']);
+        $assignmentIds = DB::table('work_assignments')->where('plan_id', $plan->id)->select('id');
+        $taskIds = DB::table('delivery_tasks')->whereIn('assignment_id', $assignmentIds)->select('id');
+        $tasks = DB::table('delivery_tasks')->whereIn('assignment_id', $assignmentIds)->orderBy('id')
+            ->get(['id', 'version', 'parent_task_id', 'status', 'is_active']);
+        $submissions = DB::table('task_submissions')->whereIn('task_id', $taskIds)->orderBy('id')->get(['id', 'decision']);
+        $delegations = DB::table('kpi_delegations')->where('plan_id', $plan->id)->orderBy('id')->get(['id', 'version', 'generation']);
+        $monthly = DB::table('monthly_kpi_submissions')->where('plan_id', $plan->id)->orderBy('id')->get(['id', 'status']);
+        $counts = [
+            'items' => DB::table('performance_plan_items')->where('plan_id', $plan->id)->count(),
+            'revisions' => DB::table('performance_plan_versions')->where('plan_id', $plan->id)->count(),
+            'assignments' => $assignments->count(), 'tasks' => $tasks->count(), 'submissions' => $submissions->count(),
+            'kpi_assignments' => $delegations->count(), 'monthly_results' => $monthly->count(),
+        ];
+
+        return [
+            'counts' => $counts,
+            'token' => hash('sha256', json_encode([
+                $plan->id, $plan->revision, $plan->published_revision, $counts,
+                $assignments, $tasks, $submissions, $delegations, $monthly,
+            ], JSON_THROW_ON_ERROR)),
+            'assignment_ids' => $assignments->pluck('id')->all(), 'task_ids' => $tasks->pluck('id')->all(),
+            'submission_ids' => $submissions->pluck('id')->all(), 'delegation_ids' => $delegations->pluck('id')->all(),
+        ];
+    }
+
     public function destroy(Request $request, int $plan): JsonResponse
     {
         $this->requireEditor($request);
-        $data = $request->validate(['revision' => ['required', 'integer', 'min:1']]);
+        $data = $request->validate([
+            'revision' => ['required', 'integer', 'min:1'], 'deletion_token' => ['nullable', 'string', 'size:64'],
+        ]);
 
         DB::transaction(function () use ($request, $plan, $data): void {
             $record = DB::table('performance_plans')->where('id', $plan)->lockForUpdate()->first();
             abort_unless($record, 404, 'Plan not found.');
-            abort_unless($record->status === 'draft' && $record->published_revision === null, 409,
-                'This plan has a published version and cannot be removed.');
             abort_unless((int) $record->revision === (int) $data['revision'], 409,
                 'Someone changed this plan. Refresh the list before removing it.');
+            $details = $this->deletionDetails($record);
+            $hasWork = $details['counts']['assignments'] > 0 || $details['counts']['kpi_assignments'] > 0 || $details['counts']['monthly_results'] > 0;
+            if ($record->published_revision !== null || $hasWork || isset($data['deletion_token'])) {
+                abort_unless(hash_equals($details['token'], $data['deletion_token'] ?? ''), 409,
+                    'The plan or its linked work changed. Reload the deletion details and confirm again.');
+            }
+            $document = $this->document($record);
+            $assignmentIds = DB::table('work_assignments')->where('plan_id', $plan)->select('id');
+            $taskIds = DB::table('delivery_tasks')->whereIn('assignment_id', $assignmentIds)->select('id');
+            DB::table('task_submissions')->whereIn('task_id', $taskIds)->delete();
+            DB::table('delivery_tasks')->whereIn('assignment_id', $assignmentIds)->delete();
+            DB::table('work_assignments')->where('plan_id', $plan)->delete();
+            DB::table('kpi_delegations')->where('plan_id', $plan)->delete();
+            DB::table('monthly_kpi_submissions')->where('plan_id', $plan)->delete();
+            DB::table('monthly_kpi_reviewers')->where('plan_id', $plan)->delete();
+            $this->removeWorkReferences($plan, $details);
 
             foreach (['activity', 'kpi', 'kpa'] as $kind) {
                 DB::table('performance_plan_items')->where('plan_id', $plan)->where('kind', $kind)->delete();
@@ -178,12 +235,43 @@ class PerformancePlanController extends Controller
                 'before_data' => json_encode([
                     'plan_id' => $plan, 'title' => $record->title, 'owner_id' => $record->owner_id,
                     'year' => $record->year, 'revision' => $record->revision,
+                    'document' => $document, 'removed_records' => $details['counts'],
                 ], JSON_THROW_ON_ERROR),
                 'created_at' => now(),
             ]);
         });
 
-        return response()->json(['message' => 'Draft plan removed.']);
+        return response()->json(['message' => 'Plan deleted.']);
+    }
+
+    private function removeWorkReferences(int $plan, array $details): void
+    {
+        $sources = [
+            'hof' => [$plan], 'assignment' => $details['assignment_ids'], 'task' => $details['task_ids'],
+            'kpi' => $details['delegation_ids'],
+        ];
+        $proposalIds = DB::table('personal_weight_proposals')->get(['id', 'source_key'])->filter(function ($proposal) use ($sources): bool {
+            $parts = explode(':', $proposal->source_key);
+
+            return in_array($parts[1] ?? null, $sources[$parts[0]] ?? []);
+        })->pluck('id')->all();
+        $events = [
+            'assignment' => $details['assignment_ids'], 'activity-overdue' => $details['assignment_ids'],
+            'hof-reviewer' => $details['assignment_ids'], 'task-assigned' => $details['task_ids'],
+            'submitted' => $details['task_ids'], 'task-overdue' => $details['task_ids'],
+            'reviewed' => $details['submission_ids'], 'kpi-assigned' => $details['delegation_ids'],
+        ];
+        $notificationIds = DB::table('work_notifications')->get(['id', 'event_key'])->filter(function ($notification) use ($events): bool {
+            $parts = explode(':', $notification->event_key);
+
+            return in_array($parts[1] ?? null, $events[$parts[0]] ?? []);
+        })->pluck('id')->all();
+        foreach (array_chunk($proposalIds, 500) as $ids) {
+            DB::table('personal_weight_proposals')->whereIn('id', $ids)->delete();
+        }
+        foreach (array_chunk($notificationIds, 500) as $ids) {
+            DB::table('work_notifications')->whereIn('id', $ids)->delete();
+        }
     }
 
     private function requireEditor(Request $request): void

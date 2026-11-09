@@ -16,7 +16,7 @@ class MdDashboardTest extends TestCase
         $this->getJson('/api/md/workspace')->assertUnauthorized();
         $this->postJson('/api/login', ['email' => $md->email, 'password' => 'password'])->assertOk();
         $this->getJson('/api/md/workspace?year=2026')->assertOk()->assertJsonPath('year', 2026)->assertJsonCount(0, 'activities');
-        foreach (['/api/admin/users', '/api/planning/plans', '/api/hof/assignments', '/api/hof/kpi-assignments', '/api/delivery/tasks/1/submit', '/api/delivery/submissions/1/review', '/api/allocations/draft', '/api/planning/hof-reviewers/1'] as $endpoint) {
+        foreach (['/api/admin/users', '/api/planning/plans', '/api/hof/assignments', '/api/hof/kpi-assignments', '/api/delivery/tasks/1/submit', '/api/delivery/submissions/1/review', '/api/allocations/draft'] as $endpoint) {
             $this->postJson($endpoint, [])->assertForbidden();
         }
         $this->getJson('/api/md/workspace?year=1900')->assertUnprocessable();

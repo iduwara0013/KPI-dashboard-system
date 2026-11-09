@@ -44,15 +44,18 @@ class AdminController extends Controller
             'grade' => ['nullable', 'string', 'max:30'],
             'system_role' => ['required', Rule::in(['super_admin', 'md', 'plan_editor', 'member'])],
             'is_active' => ['required', 'boolean'],
-            'password' => [$exists ? 'nullable' : 'required', 'string', 'min:12', 'max:128'],
+            'password' => [$exists ? 'nullable' : 'required', 'string', 'min:5', 'max:128'],
             'memberships' => ['present', 'array', 'max:30'],
             'memberships.*.department_id' => ['required', 'integer', 'distinct', Rule::exists('departments', 'id')->where('is_active', true)],
-            'memberships.*.responsibility' => ['required', Rule::in(['hof', 'manager', 'employee'])],
+            'memberships.*.responsibility' => ['sometimes', 'required', Rule::in(['hof', 'manager', 'employee'])],
             'memberships.*.responsibility_title' => ['nullable', 'string', 'max:120'],
-            'memberships.*.manager_ids' => ['present', 'array', 'max:10'],
+            'memberships.*.manager_ids' => ['sometimes', 'array', 'max:10'],
             'memberships.*.manager_ids.*' => ['required', 'integer', Rule::exists('users', 'id')->where('is_active', true)],
         ]);
 
+        if ($data['system_role'] === 'md' && $data['memberships'] !== []) {
+            throw ValidationException::withMessages(['memberships' => 'The Managing Director has company-wide access and cannot be assigned to a department.']);
+        }
         if ($data['is_active'] && str_ends_with($data['email'], '@pending.cpstl.invalid')) {
             throw ValidationException::withMessages(['email' => 'Enter the employee’s work email before activating the account.']);
         }
@@ -67,9 +70,19 @@ class AdminController extends Controller
         $saved = DB::transaction(function () use ($request, $user, $data, $exists) {
             // Serialize organization edits, including graph validation, across administrators.
             DB::table('users')->orderBy('id')->lockForUpdate()->get(['id']);
-            $this->validateReporting($data, $user?->id);
+            if ($data['system_role'] === 'md' && $data['is_active']
+                && DB::table('users')->where('system_role', 'md')->where('is_active', true)->where('id', '!=', $user?->id ?? 0)->exists()) {
+                throw ValidationException::withMessages(['system_role' => 'The company already has an active Managing Director account.']);
+            }
             $before = $exists ? $this->userState($user) : null;
             $previousMemberships = collect($before['memberships'] ?? [])->keyBy('department_id');
+            foreach ($data['memberships'] as &$membership) {
+                $membership['responsibility'] ??= $previousMemberships->get($membership['department_id'])?->responsibility ?? 'employee';
+                $membership['manager_ids'] ??= collect($before['reporting'] ?? [])
+                    ->where('department_id', $membership['department_id'])->pluck('manager_id')->all();
+            }
+            unset($membership);
+            $this->validateReporting($data, $user?->id);
             $attributes = collect($data)->except(['memberships', 'password'])->all();
             if (! empty($data['password'])) {
                 $attributes['password'] = $data['password'];
@@ -171,6 +184,8 @@ class AdminController extends Controller
             'changes.*.manager_ids.*' => ['required', 'integer', 'min:1'],
             'changes.*.expected_manager_ids' => ['present', 'array', 'max:10'],
             'changes.*.expected_manager_ids.*' => ['required', 'integer', 'min:1'],
+            'changes.*.responsibility' => ['sometimes', 'required', Rule::in(['hof', 'manager', 'employee'])],
+            'changes.*.expected_responsibility' => ['required_with:changes.*.responsibility', Rule::in(['hof', 'manager', 'employee'])],
         ]);
 
         $links = DB::transaction(function () use ($request, $department, $data) {
@@ -178,13 +193,30 @@ class AdminController extends Controller
             $record = DB::table('departments')->where('is_active', true)->lockForUpdate()->find($department);
             abort_unless($record, 404, 'Choose an active department.');
             $members = DB::table('department_memberships as m')->join('users as u', 'u.id', '=', 'm.user_id')
-                ->where('m.department_id', $department)->get(['u.id', 'u.is_active', 'm.responsibility'])->keyBy('id');
+                ->where('m.department_id', $department)->where('u.system_role', '!=', 'md')
+                ->get(['u.id', 'u.is_active', 'u.system_role', 'm.responsibility'])->keyBy('id');
             $reporting = DB::table('reporting_relationships')->where('department_id', $department);
             $graph = $reporting->get()->groupBy('user_id')->map(function ($rows): array {
                 return $rows->pluck('manager_id')->map(fn ($id): int => (int) $id)->sort()->values()->all();
             })->all();
             $before = [];
             $after = [];
+            $rolesBefore = [];
+            $rolesAfter = [];
+            foreach ($data['changes'] as $change) {
+                if (! array_key_exists('responsibility', $change)) {
+                    continue;
+                }
+                $member = $members->get($change['user_id']);
+                abort_unless($member && $member->responsibility === $change['expected_responsibility'], 409,
+                    'This person’s workflow access changed. Reload the structure before saving.');
+                abort_unless($member->system_role === 'member', 422, 'Department workflow access applies to team member accounts.');
+                if ($member->responsibility !== $change['responsibility']) {
+                    $rolesBefore[$member->id] = $member->responsibility;
+                    $rolesAfter[$member->id] = $change['responsibility'];
+                    $member->responsibility = $change['responsibility'];
+                }
+            }
 
             foreach ($data['changes'] as $index => $change) {
                 $userId = (int) $change['user_id'];
@@ -217,6 +249,18 @@ class AdminController extends Controller
                         throw ValidationException::withMessages(['changes' => 'These changes would create a circular reporting structure.']);
                     }
                 }
+            }
+            foreach ($graph as $managerIds) {
+                foreach ($managerIds as $managerId) {
+                    abort_unless(in_array($members->get($managerId)?->responsibility, ['hof', 'manager'], true), 422,
+                        'Move this person’s direct reports before changing their workflow access to Employee.');
+                }
+            }
+            foreach ($rolesAfter as $userId => $responsibility) {
+                DB::table('department_memberships')->where('department_id', $department)->where('user_id', $userId)
+                    ->update(['responsibility' => $responsibility, 'updated_at' => now()]);
+            }
+            foreach ($after as $userId => $managerIds) {
                 (clone $reporting)->where('user_id', $userId)->delete();
                 foreach ($managerIds as $managerId) {
                     DB::table('reporting_relationships')->insert([
@@ -228,11 +272,17 @@ class AdminController extends Controller
             if ($after !== []) {
                 $this->record($request, 'department.reporting_updated', $record->name, $before, $after);
             }
+            if ($rolesAfter !== []) {
+                $this->record($request, 'department.workflow_access_updated', $record->name, $rolesBefore, $rolesAfter);
+            }
 
             return $reporting->get();
         });
 
-        return response()->json(['links' => $links]);
+        return response()->json([
+            'links' => $links,
+            'memberships' => DB::table('department_memberships')->where('department_id', $department)->get(),
+        ]);
     }
 
     private function validateReporting(array $data, ?int $userId): void
@@ -260,7 +310,7 @@ class AdminController extends Controller
             foreach ($membership['manager_ids'] as $managerId) {
                 $valid = DB::table('department_memberships')->join('users', 'users.id', '=', 'department_memberships.user_id')
                     ->where('department_id', $departmentId)->where('user_id', $managerId)
-                    ->where('users.is_active', true)->whereIn('responsibility', ['hof', 'manager'])->exists();
+                    ->where('users.is_active', true)->where('users.system_role', '!=', 'md')->whereIn('responsibility', ['hof', 'manager'])->exists();
                 if (! $valid || $managerId === $userId) {
                     throw ValidationException::withMessages(["memberships.$index.manager_ids" => 'Choose an active HOF or manager in the same department. A person cannot report to themselves.']);
                 }

@@ -136,7 +136,7 @@ class HofWorkController extends Controller
                     $assignment->confirmed_progress = (float) $assignment->confirmed_progress;
                     $assignment->due_date = $assignment->due_date ? substr((string) $assignment->due_date, 0, 10) : null;
                     $assignment->own_review_configured = (int) $assignment->owner_id === (int) $assignment->assignee_id && DB::table('delivery_tasks')->where('assignment_id', $assignment->id)->where('generation', $assignment->delivery_generation)->where('is_active', true)->exists();
-                    if ((int) $assignment->owner_id === (int) $assignment->assignee_id && ! app(DeliveryController::class)->context($assignment)['valid']) {
+                    if (! app(DeliveryController::class)->context($assignment)['valid']) {
                         $assignment->confirmed_progress = 0;
                     }
                 }
@@ -234,7 +234,8 @@ class HofWorkController extends Controller
             throw ValidationException::withMessages(['assignee_id' => 'Choose yourself, a reporting manager or an employee under your HOF scope in this department.']);
         }
         $existing = DB::table('work_assignments')->where('plan_id', $plan->id)->where('activity_code', $activity['activity_code'])->lockForUpdate()->first();
-        $reset = ! $existing || (int) $existing->assignee_id !== $assignee || $existing->source_signature !== $activity['source_signature'] || $existing->recipient_role !== $role;
+        $reset = ! $existing || (int) $existing->assignee_id !== $assignee || $existing->source_signature !== $activity['source_signature']
+            || $existing->recipient_role !== $role || ! app(DeliveryController::class)->context($existing)['valid'];
         $attributes = [
             'owner_id' => $plan->owner_id, 'assignee_id' => $assignee, 'department_id' => $activity['department_id'],
             'source_revision' => $plan->published_revision, 'source_signature' => $activity['source_signature'],
@@ -256,7 +257,7 @@ class HofWorkController extends Controller
         if (! $inherit && $assignee !== (int) $request->user()->id && ($reset || $existing->due_date != $attributes['due_date'] || $existing->instructions !== $attributes['instructions'])) {
             NotificationController::send($assignee, 'assignment:'.$id.':'.$record->version, 'assignment', 'Activity assigned or updated: '.$activity['activity'], ['workspace' => 'delivery', 'page' => $role === 'employee' ? 'tasks' : 'activities', 'search' => $activity['activity']]);
         }
-        if ($role === 'employee' && ($reset || ! DB::table('delivery_tasks')->where('assignment_id', $id)->where('generation', $record->delivery_generation)->where('is_active', true)->exists())) {
+        if (in_array($role, ['employee', 'own'], true) && ($reset || ! DB::table('delivery_tasks')->where('assignment_id', $id)->where('generation', $record->delivery_generation)->where('is_active', true)->exists())) {
             DB::table('delivery_tasks')->insert([
                 'assignment_id' => $id, 'generation' => $record->delivery_generation, 'manager_id' => $plan->owner_id,
                 'assignee_id' => $assignee, 'reviewer_id' => $plan->owner_id, 'title' => mb_substr($activity['activity'], 0, 500), 'weight' => 1,
@@ -282,9 +283,16 @@ class HofWorkController extends Controller
             $record = DB::table('work_assignments')->where('id', $assignment)->lockForUpdate()->first();
             abort_unless((int) $record->assignee_id === $request->user()->id && (int) $record->version === (int) $data['version'], 409, 'This assignment changed. Refresh before saving.');
             $activity = collect($this->activities($plan))->firstWhere('activity_code', $record->activity_code);
-            abort_if(DB::table('delivery_tasks')->where('assignment_id', $assignment)->where('generation', $record->delivery_generation)->where('is_active', true)->exists(), 409, 'Use Task reviews & delivery to update and submit this work for approval.');
+            $tasks = DB::table('delivery_tasks')->where('assignment_id', $assignment)->where('generation', $record->delivery_generation)->where('is_active', true)->get();
+            abort_if($tasks->count() > 1 || ($tasks->isNotEmpty() && ((int) $tasks->first()->assignee_id !== $request->user()->id || in_array($tasks->first()->status, ['submitted', 'approved'], true))), 409, 'Open the work breakdown to update its individual tasks.');
             abort_unless($activity && in_array($activity['department_id'], $departments, true) && $record->source_signature === $activity['source_signature'], 409, 'The published activity changed. Review its assignment before updating progress.');
             $attributes = ['reported_progress' => round((float) $data['reported_progress'], 2), 'progress_note' => $data['progress_note'], 'version' => $record->version + 1, 'updated_at' => now()];
+            if ($tasks->isNotEmpty()) {
+                DB::table('delivery_tasks')->where('id', $tasks->first()->id)->update([
+                    'reported_progress' => $attributes['reported_progress'], 'progress_note' => $data['progress_note'],
+                    'status' => 'in_progress', 'version' => $tasks->first()->version + 1, 'updated_at' => now(),
+                ]);
+            }
             DB::table('work_assignments')->where('id', $assignment)->update($attributes);
             $this->audit($request, 'work.progress_updated', $record->activity_code, (array) $record, $attributes);
         });

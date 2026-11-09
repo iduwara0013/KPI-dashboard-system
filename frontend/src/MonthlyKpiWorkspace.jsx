@@ -91,7 +91,7 @@ export default function MonthlyKpiWorkspace({ session }) {
                 const [label, tone] = statuses[row.status];
                 return <tr key={`${row.plan_id}:${row.kpi_code}`}>
                   <td><strong>{row.title}</strong><small>{row.department} · {row.kpa}</small><small>{row.plan_code} · {row.kpi_code}</small></td>
-                  <td>{row.archived ? <Badge>Archived KPI</Badge> : <><strong>{row.reporter || 'Owner needs assignment'}</strong><small>{row.reviewer ? `Reviewer: ${row.reviewer}` : 'Reviewer needs assignment'}</small></>}</td>
+                  <td>{row.archived ? <Badge>Archived KPI</Badge> : <><strong>{row.reporter || 'Owner needs assignment'}</strong><small>{row.self_confirm ? 'HOF confirms the result' : row.reviewer ? `Reviewer: ${row.reviewer}` : 'Reviewer needs assignment'}</small></>}</td>
                   <td><strong>{format(row.target, row.unit)}</strong><small>{row.direction === 'lower' ? 'Lower is better' : 'Higher is better'}</small></td>
                   <td><strong>{format(row.actual, row.unit)}</strong></td>
                   <td><strong className={row.gap < 0 ? 'kpi-gap-negative' : row.gap > 0 ? 'kpi-gap-positive' : ''}>{gapText(row.gap, row.unit)}</strong></td>
@@ -99,7 +99,6 @@ export default function MonthlyKpiWorkspace({ session }) {
                   <td><div className="monthly-kpi-actions">
                     {row.can_submit && <button className="btn btn-primary btn-small" onClick={() => setAction({ row, kind: 'submit' })}>{row.attempt ? 'Submit new result' : 'Enter actual'}</button>}
                     {row.can_review && <button className="btn btn-primary btn-small" onClick={() => setAction({ row, kind: 'review' })}>Review result</button>}
-                    {row.can_assign_reviewer && <button className="btn btn-secondary btn-small" onClick={() => setAction({ row, kind: 'reviewer' })}>{row.reviewer ? 'Change reviewer' : 'Assign reviewer'}</button>}
                     {row.history.length > 0 && <button className="btn btn-secondary btn-small" onClick={() => setAction({ row, kind: 'history' })}>History</button>}
                   </div></td>
                 </tr>;
@@ -108,23 +107,22 @@ export default function MonthlyKpiWorkspace({ session }) {
           </section>}
       </>}
     </main>
-    {action && <ResultModal key={action.kind} {...action} reviewers={data.reviewers} month={Number(data.period.slice(5))} period={data.period}
+    {action && <ResultModal key={action.kind} {...action} month={Number(data.period.slice(5))} period={data.period}
       onClose={() => setAction(null)} onSaved={message => { setNotice(message); setAction(null); reload(); }} />}
   </div>;
 }
 
-function ResultModal({ row, kind, reviewers, month, period, onClose, onSaved }) {
+function ResultModal({ row, kind, month, period, onClose, onSaved }) {
   const isCorrection = row.status === 'needs_correction';
   const [actual, setActual] = useState(isCorrection ? row.actual ?? '' : '');
   const [evidence, setEvidence] = useState(isCorrection ? row.history[0]?.evidence ?? '' : '');
   const [url, setUrl] = useState(isCorrection ? row.history[0]?.evidence_url ?? '' : '');
-  const [reviewer, setReviewer] = useState(row.reviewer_id ?? '');
   const [decision, setDecision] = useState('approved');
   const [note, setNote] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
-  const titles = { submit: 'Submit monthly result', review: 'Review monthly result', reviewer: 'Designate KPI reviewer', history: 'Monthly result history' };
+  const titles = { submit: row.self_confirm ? 'Confirm monthly result' : 'Submit monthly result', review: 'Review monthly result', history: 'Monthly result history' };
   async function submit(event) {
     event.preventDefault();
     if (saving.current) return;
@@ -133,8 +131,7 @@ function ResultModal({ row, kind, reviewers, month, period, onClose, onSaved }) 
     setError(null);
     const fields = { ...context(row), month, attempt: row.attempt };
     const body = kind === 'submit' ? { ...fields, actual_value: actual, evidence, evidence_url: url || null }
-      : kind === 'review' ? { ...fields, decision, review_note: note || null }
-        : { ...context(row), reviewer_id: reviewer };
+      : { ...fields, decision, review_note: note || null };
     try {
       const response = await request(`/kpi-results/${kind}`, { method: 'POST', body });
       onSaved(response.message);
@@ -151,7 +148,6 @@ function ResultModal({ row, kind, reviewers, month, period, onClose, onSaved }) 
       <form onSubmit={submit}>
         <div className="modal-body">
           <ErrorBox error={error} />
-          {kind === 'reviewer' && <Field label="Independent HOF reviewer" required hint="This reviewer applies to this KPI in all reporting months while it is owned by the HOF."><select required value={reviewer} onChange={event => setReviewer(event.target.value)}><option value="">Choose another HOF</option>{reviewers.filter(person => person.id !== row.plan_owner_id).map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></Field>}
           {kind === 'submit' && <>
             <p className="monthly-kpi-note">Published target for this result is <strong>{format(row.target, row.unit)}</strong>.</p>
             {row.status === 'needs_correction' && <p className="monthly-kpi-note"><strong>Requested correction</strong><br />{row.history[0].review_note}</p>}
@@ -166,7 +162,7 @@ function ResultModal({ row, kind, reviewers, month, period, onClose, onSaved }) 
             <Field label="Review note" required={decision === 'needs_correction'}><textarea required={decision === 'needs_correction'} rows={3} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} /></Field>
           </>}
         </div>
-        <div className="modal-footer"><button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : kind === 'submit' ? 'Submit for review' : kind === 'review' ? 'Save decision' : 'Save reviewer'}</button></div>
+        <div className="modal-footer"><button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : kind === 'submit' ? (row.self_confirm ? 'Confirm result' : 'Submit for review') : 'Save decision'}</button></div>
       </form>}
   </Modal>;
 }

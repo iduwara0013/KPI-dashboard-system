@@ -194,9 +194,10 @@ function Workspace({ session, onSession, page, onPage }) {
     onPage(next);
     setQuery(''); setDepartmentFilter('all'); setStatusFilter('all'); setMobileNav(false);
   }
-  function savedReporting(departmentId, links) {
+  function savedReporting(departmentId, links, memberships) {
     setData(previous => ({
       ...previous, reporting: [...previous.reporting.filter(link => !idEquals(link.department_id, departmentId)), ...links],
+      memberships: [...previous.memberships.filter(membership => !idEquals(membership.department_id, departmentId)), ...memberships],
     }));
   }
   async function refresh() {
@@ -400,38 +401,107 @@ function AccessView({ data, onManage }) {
 }
 
 function UserForm({ user, data, session, onClose, onSaved }) {
-  const [form, setForm] = useState(() => user ? { ...user, password: '', memberships: memberOf(data, user.id).map(m => ({ department_id: String(m.department_id), responsibility: m.responsibility, responsibility_title: m.responsibility_title || '', manager_ids: data.reporting.filter(r => idEquals(r.user_id, user.id) && idEquals(r.department_id, m.department_id)).map(r => Number(r.manager_id)) })) } : { ...initialUser, memberships: [] });
-  const [error, setError] = useState(null), [busy, setBusy] = useState(false);
-  const set = (key, value) => setForm(f => ({ ...f, [key]: value }));
-  const updateMembership = (index, changes) => setForm(f => ({ ...f, memberships: f.memberships.map((m, i) => i === index ? { ...m, ...changes } : m) }));
+  const [form, setForm] = useState(() => user ? {
+    ...user,
+    password: '',
+    memberships: user.system_role === 'md' ? [] : memberOf(data, user.id).map(membership => ({
+      department_id: String(membership.department_id),
+      responsibility_title: membership.responsibility_title || responsibilities[membership.responsibility] || '',
+    })),
+  } : { ...initialUser, memberships: [] });
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const set = (key, value) => setForm(previous => ({
+    ...previous, [key]: value, ...(key === 'system_role' && value === 'md' ? { memberships: [] } : {}),
+  }));
+  const updateMembership = (index, changes) => setForm(previous => ({
+    ...previous,
+    memberships: previous.memberships.map((membership, i) => i === index ? { ...membership, ...changes } : membership),
+  }));
   const isSelf = user?.id === session.id;
-  async function submit(e) {
-    e.preventDefault(); setBusy(true); setError(null);
+  const activeDepartments = data.departments.filter(department => department.is_active);
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
     try {
-      await request(user ? `/admin/users/${user.id}` : '/admin/users', { method: user ? 'PUT' : 'POST', body: { ...form, memberships: form.memberships.map(m => ({ ...m, department_id: Number(m.department_id) })) } });
+      await request(user ? `/admin/users/${user.id}` : '/admin/users', {
+        method: user ? 'PUT' : 'POST',
+        body: {
+          ...form,
+          memberships: form.memberships.map(membership => ({
+            department_id: Number(membership.department_id),
+            responsibility_title: membership.responsibility_title.trim(),
+          })),
+        },
+      });
       onSaved(user ? 'Person updated successfully.' : 'Person added to your organization.');
-    } catch (err) { setError(err); }
-    finally { setBusy(false); }
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
   }
-  return <form onSubmit={submit}><div className="modal-body"><ErrorBox error={error} /><div className="form-section-label">PERSONAL DETAILS</div><div className="form-grid">
-    <Field label="Full name" required><input value={form.name} onChange={e => set('name', e.target.value)} maxLength={120} placeholder="e.g. Amali Perera" required /></Field>
-    <Field label="Employee / EPF number" required><input value={form.employee_number || ''} onChange={e => set('employee_number', e.target.value.trim())} maxLength={40} placeholder="e.g. EMP012" required /></Field>
-    <Field label="Work email" required hint={user?.email.endsWith('@pending.cpstl.invalid') ? 'Enter the work email and set an initial password before activating.' : undefined}><input type="email" value={form.email} onChange={e => set('email', e.target.value.trim().toLowerCase())} maxLength={180} placeholder="name@organization.com" required /></Field>
-    <Field label="Designation" required hint="Your job title does not determine your system permissions."><input value={form.designation || ''} onChange={e => set('designation', e.target.value)} placeholder="e.g. CIO, DGM, Systems Executive" maxLength={120} required /></Field>
-    <Field label="Grade"><input value={form.grade || ''} onChange={e => set('grade', e.target.value)} placeholder="e.g. A5" maxLength={30} /></Field>
-    <Field label="System access" required><select disabled={isSelf} value={form.system_role} onChange={e => set('system_role', e.target.value)}>{Object.entries(roles).map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></Field>
-    <Field label="Account status"><select disabled={isSelf} value={String(form.is_active)} onChange={e => set('is_active', e.target.value === 'true')}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
-    <Field label={user ? 'New password (optional)' : 'Initial password'} required={!user} hint={user ? 'Leave empty to keep the current password.' : 'At least 12 characters. Share it through your office’s approved channel.'}><input type="password" autoComplete="new-password" minLength={12} maxLength={128} value={form.password} onChange={e => set('password', e.target.value)} required={!user} /></Field>
-  </div><div className="form-section-header"><div><div className="form-section-label">DEPARTMENT RESPONSIBILITIES</div><p>Add one or more departments. Choose reporting managers within each department.</p></div><button className="btn btn-secondary btn-small" type="button" disabled={form.memberships.length >= data.departments.filter(d => d.is_active).length} onClick={() => set('memberships', [...form.memberships, { department_id: '', responsibility: 'employee', responsibility_title: '', manager_ids: [] }])}><Plus size={15} /> Add department</button></div>
-  <datalist id="department-responsibility-titles">{responsibilityTitles.map(title => <option key={title} value={title} />)}</datalist>
-  {!form.memberships.length && <div className="membership-empty"><Building2 size={20} /><span>No department memberships yet. You can add them now or later.</span></div>}
-  {form.memberships.map((m, i) => {
-    const leaders = data.memberships.filter(x => idEquals(x.department_id, m.department_id) && ['hof', 'manager'].includes(x.responsibility) && !idEquals(x.user_id, user?.id)).map(x => userById(data, x.user_id)).filter(u => u?.is_active);
-    return <div className="membership-editor" key={i}><div className="membership-editor-top"><span>Department {i + 1}</span><button type="button" className="icon-button danger" aria-label={`Remove department ${i + 1}`} onClick={() => set('memberships', form.memberships.filter((_, index) => index !== i))}><Trash2 size={16} /></button></div><div className="form-grid"><Field label="Department" required><select value={m.department_id} required onChange={e => updateMembership(i, { department_id: e.target.value, responsibility_title: '', manager_ids: [] })}><option value="">Select department</option>{data.departments.filter(d => d.is_active && (!form.memberships.some((other, index) => index !== i && idEquals(other.department_id, d.id)))).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field><Field label="System responsibility" required><select value={m.responsibility} onChange={e => updateMembership(i, { responsibility: e.target.value })}>{Object.entries(responsibilities).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></Field>
-      <Field label="Responsibility title" hint="Choose a suggested title or enter the title used in this department."><input list="department-responsibility-titles" maxLength={120} value={m.responsibility_title} onChange={e => updateMembership(i, { responsibility_title: e.target.value })} placeholder="e.g. Head of Data Center" /></Field>
-    </div><div className="reporting-label">Reports to <small>Optional · select all that apply</small></div><div className="manager-options">{leaders.length ? leaders.map(leader => <label key={leader.id} className="manager-option"><input type="checkbox" checked={m.manager_ids.includes(leader.id)} onChange={e => updateMembership(i, { manager_ids: e.target.checked ? [...m.manager_ids, leader.id] : m.manager_ids.filter(id => id !== leader.id) })} /><Avatar name={leader.name} small /><span>{leader.name}</span></label>) : <small>{m.department_id ? 'No other active HOF or manager in this department yet.' : 'Select a department to see its managers.'}</small>}</div></div>;
-  })}
-  <div className="form-note"><ShieldCheck size={16} /><span>System administrators manage the organization. Plan editors manage performance plans. HOFs can view their published plans.</span></div></div><div className="modal-footer"><button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="btn btn-primary" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <Check size={17} />}{user ? 'Save changes' : 'Add person'}</button></div></form>;
+
+  return <form onSubmit={submit}>
+    <div className="modal-body">
+      <ErrorBox error={error} />
+      <div className="form-grid">
+        {form.system_role !== 'md' && <div className="person-departments">
+          <div className="person-department-actions">
+            <span>Departments</span>
+            <button className="btn btn-secondary btn-small" type="button"
+              disabled={form.memberships.length >= activeDepartments.length}
+              onClick={() => set('memberships', [...form.memberships, { department_id: '', responsibility_title: '' }])}>
+              <Plus size={15} />Add department
+            </button>
+          </div>
+          <datalist id="department-responsibility-titles">{responsibilityTitles.map(title => <option key={title} value={title} />)}</datalist>
+          {!form.memberships.length && <div className="membership-empty"><Building2 size={20} /><span>Add the departments this person belongs to.</span></div>}
+          {form.memberships.map((membership, index) => <div className="membership-editor" key={index}>
+            <div className="membership-editor-top">
+              <span>Department {index + 1}</span>
+              <button type="button" className="icon-button danger" aria-label={`Remove department ${index + 1}`}
+                onClick={() => set('memberships', form.memberships.filter((_, i) => i !== index))}><Trash2 size={16} /></button>
+            </div>
+            <div className="form-grid">
+              <Field label="Department" required>
+                <select value={membership.department_id} required onChange={event => updateMembership(index, { department_id: event.target.value, responsibility_title: '' })}>
+                  <option value="">Select department</option>
+                  {activeDepartments.filter(department => !form.memberships.some((other, i) => i !== index && idEquals(other.department_id, department.id)))
+                    .map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Responsibility" required hint="Type the responsibility used in this department.">
+                <input list="department-responsibility-titles" maxLength={120} required value={membership.responsibility_title}
+                  onChange={event => updateMembership(index, { responsibility_title: event.target.value })}
+                  placeholder="e.g. CIO, Head of Data Center, Systems Engineer" />
+              </Field>
+            </div>
+          </div>)}
+        </div>}
+        <Field label="Full name" required><input value={form.name} onChange={event => set('name', event.target.value)} maxLength={120} placeholder="e.g. Amali Perera" required /></Field>
+        <Field label="Employee / EPF number" required><input value={form.employee_number || ''} onChange={event => set('employee_number', event.target.value.trim())} maxLength={40} placeholder="e.g. EMP012" required /></Field>
+        <Field label="Work email" required hint={user?.email.endsWith('@pending.cpstl.invalid') ? 'Enter the work email and set an initial password before activating.' : undefined}>
+          <input type="email" value={form.email} onChange={event => set('email', event.target.value.trim().toLowerCase())} maxLength={180} placeholder="name@organization.com" required />
+        </Field>
+        <Field label="Designation" required><input value={form.designation || ''} onChange={event => set('designation', event.target.value)} placeholder="e.g. CIO, DGM, Systems Executive" maxLength={120} required /></Field>
+        <Field label="Grade"><input value={form.grade || ''} onChange={event => set('grade', event.target.value)} placeholder="e.g. A5" maxLength={30} /></Field>
+        <Field label="System access" required><select disabled={isSelf} value={form.system_role} onChange={event => set('system_role', event.target.value)}>{Object.entries(roles).map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></Field>
+        <Field label="Account status"><select disabled={isSelf} value={String(form.is_active)} onChange={event => set('is_active', event.target.value === 'true')}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
+        <Field label={user ? 'New password (optional)' : 'Initial password'} required={!user}
+          hint={user ? 'At least 5 characters when changing the password.' : 'At least 5 characters.'}>
+          <input type="password" autoComplete="new-password" minLength={5} maxLength={128} value={form.password} onChange={event => set('password', event.target.value)} required={!user} />
+        </Field>
+      </div>
+      <div className="form-note"><Network size={16} /><span>{form.system_role === 'md' ? 'The Managing Director has company-wide dashboard access.' : 'Set reporting connections and department workflow access in Department reporting.'}</span></div>
+    </div>
+    <div className="modal-footer">
+      <button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button>
+      <button className="btn btn-primary" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <Check size={17} />}{user ? 'Save changes' : 'Add person'}</button>
+    </div>
+  </form>;
 }
 
 function DepartmentForm({ department, onClose, onSaved }) {

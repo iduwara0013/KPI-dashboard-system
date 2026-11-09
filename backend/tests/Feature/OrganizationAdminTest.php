@@ -163,6 +163,110 @@ class OrganizationAdminTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_md_has_no_department_and_only_one_active_director_can_be_saved(): void
+    {
+        $department = $this->department();
+        $payload = $this->payload(['system_role' => 'md']);
+        $this->actingAs($this->admin())->postJson('/api/admin/users', [...$payload, 'memberships' => [
+            ['department_id' => $department, 'responsibility_title' => 'Managing Director'],
+        ]])->assertUnprocessable()->assertJsonValidationErrors('memberships');
+        $id = $this->postJson('/api/admin/users', $payload)->assertCreated()->json('user.id');
+        $this->assertDatabaseMissing('department_memberships', ['user_id' => $id]);
+        $this->putJson('/api/admin/users/'.$id, [...$payload, 'password' => ''])->assertOk();
+        $second = [...$payload, 'email' => 'next-md@example.test', 'employee_number' => 'MD002'];
+        $this->postJson('/api/admin/users', $second)->assertUnprocessable()->assertJsonValidationErrors('system_role');
+        $inactive = $this->postJson('/api/admin/users', [...$second, 'is_active' => false])->assertCreated()->json('user.id');
+        $this->putJson('/api/admin/users/'.$inactive, $second)->assertUnprocessable()->assertJsonValidationErrors('system_role');
+    }
+
+    public function test_old_md_department_links_are_removed_and_cannot_be_reassigned_through_reporting(): void
+    {
+        $department = $this->department();
+        $director = User::factory()->create(['system_role' => 'md']);
+        $manager = User::factory()->create();
+        $employee = User::factory()->create();
+        $this->membership($director, $department, 'hof');
+        $this->membership($manager, $department, 'manager');
+        $this->membership($employee, $department, 'employee');
+        $this->actingAs($this->admin())->putJson('/api/admin/departments/'.$department.'/reporting', ['changes' => [
+            ['user_id' => $employee->id, 'manager_ids' => [$director->id], 'expected_manager_ids' => []],
+        ]])->assertUnprocessable();
+        DB::table('reporting_relationships')->insert([
+            ['department_id' => $department, 'user_id' => $director->id, 'manager_id' => $manager->id],
+            ['department_id' => $department, 'user_id' => $employee->id, 'manager_id' => $director->id],
+        ]);
+        $migration = require database_path('migrations/2026_11_09_000002_remove_md_department_assignments.php');
+        $migration->up();
+        $this->assertDatabaseHas('users', ['id' => $director->id, 'system_role' => 'md']);
+        $this->assertDatabaseMissing('department_memberships', ['user_id' => $director->id]);
+        $this->assertDatabaseMissing('reporting_relationships', ['user_id' => $director->id]);
+        $this->assertDatabaseMissing('reporting_relationships', ['manager_id' => $director->id]);
+        $this->assertDatabaseHas('department_memberships', ['user_id' => $manager->id]);
+        $this->assertDatabaseHas('admin_activity', ['action' => 'md.department_links_removed', 'subject' => $director->name]);
+    }
+
+    public function test_person_form_accepts_five_character_password_and_free_department_responsibilities(): void
+    {
+        $first = $this->department();
+        $second = $this->department('DC');
+        $payload = $this->payload(['password' => 'abc12', 'memberships' => [
+            ['department_id' => $first, 'responsibility_title' => 'Information Systems Coordinator'],
+            ['department_id' => $second, 'responsibility_title' => 'Acting Data Center Lead'],
+        ]]);
+        $this->actingAs($this->admin())->postJson('/api/admin/users', [...$payload, 'password' => '1234'])
+            ->assertUnprocessable()->assertJsonValidationErrors('password');
+        $id = $this->postJson('/api/admin/users', $payload)->assertCreated()->json('user.id');
+        $this->assertDatabaseHas('department_memberships', [
+            'user_id' => $id, 'department_id' => $first, 'responsibility' => 'employee',
+            'responsibility_title' => 'Information Systems Coordinator',
+        ]);
+        $this->postJson('/api/logout')->assertOk();
+        $this->postJson('/api/login', ['email' => $payload['email'], 'password' => 'abc12'])->assertOk();
+    }
+
+    public function test_editing_person_details_preserves_reporting_and_workflow_access(): void
+    {
+        $department = $this->department();
+        $owner = User::factory()->create(['is_active' => true]);
+        $manager = User::factory()->create(['is_active' => true]);
+        $this->membership($owner, $department, 'hof');
+        $this->membership($manager, $department, 'hof');
+        DB::table('reporting_relationships')->insert([
+            'department_id' => $department, 'user_id' => $owner->id, 'manager_id' => $manager->id,
+        ]);
+        $this->actingAs($this->admin())->putJson('/api/admin/users/'.$owner->id, $this->payload([
+            'email' => $owner->email, 'password' => '', 'memberships' => [
+                ['department_id' => $department, 'responsibility_title' => 'CIO'],
+            ],
+        ]))->assertOk();
+        $this->assertDatabaseHas('department_memberships', ['user_id' => $owner->id, 'responsibility' => 'hof', 'responsibility_title' => 'CIO']);
+        $this->assertDatabaseHas('reporting_relationships', ['user_id' => $owner->id, 'manager_id' => $manager->id, 'department_id' => $department]);
+    }
+
+    public function test_workflow_access_can_be_set_in_department_reporting_with_stale_edit_protection(): void
+    {
+        $department = $this->department();
+        $secondDepartment = $this->department('DC');
+        $head = User::factory()->create(['is_active' => true]);
+        $employee = User::factory()->create(['is_active' => true]);
+        $this->membership($head, $department, 'employee');
+        $this->membership($head, $secondDepartment, 'employee');
+        $this->membership($employee, $department, 'employee');
+        $url = '/api/admin/departments/'.$department.'/reporting';
+        $changes = ['changes' => [
+            ['user_id' => $head->id, 'manager_ids' => [], 'expected_manager_ids' => [], 'responsibility' => 'hof', 'expected_responsibility' => 'employee'],
+            ['user_id' => $employee->id, 'manager_ids' => [$head->id], 'expected_manager_ids' => [], 'responsibility' => 'employee', 'expected_responsibility' => 'employee'],
+        ]];
+        $this->actingAs($this->admin())->putJson($url, $changes)->assertOk()->assertJsonCount(2, 'memberships');
+        $this->putJson($url, $changes)->assertConflict();
+        $this->assertDatabaseHas('department_memberships', ['user_id' => $head->id, 'department_id' => $department, 'responsibility' => 'hof']);
+        $this->assertDatabaseHas('department_memberships', ['user_id' => $head->id, 'department_id' => $secondDepartment, 'responsibility' => 'employee']);
+        $this->putJson($url, ['changes' => [
+            ['user_id' => $head->id, 'manager_ids' => [], 'expected_manager_ids' => [], 'responsibility' => 'employee', 'expected_responsibility' => 'hof'],
+        ]])->assertUnprocessable();
+        $this->assertDatabaseHas('department_memberships', ['user_id' => $head->id, 'department_id' => $department, 'responsibility' => 'hof']);
+    }
+
     public function test_one_hof_can_belong_to_two_departments_and_audit_excludes_passwords(): void
     {
         $a = $this->department(); $b = $this->department('DIG');

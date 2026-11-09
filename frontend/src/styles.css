@@ -64,3 +64,4 @@ main{max-width:1600px;margin:auto;padding:37px 39px 0}.page-heading{display:flex
 th{position:relative}
 @media(max-width:850px){.sidebar{visibility:hidden}.sidebar.sidebar-open{visibility:visible}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.person-departments{grid-column:1 / -1}.person-department-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.person-department-actions>span{font-weight:600;color:#344c6c}.person-departments .membership-editor:last-child{margin-bottom:0}

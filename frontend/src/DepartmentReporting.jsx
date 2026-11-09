@@ -30,13 +30,16 @@ export default function DepartmentReporting({ data, onSaved }) {
   const people = data.memberships.filter(membership => String(membership.department_id) === departmentId)
     .flatMap(membership => {
       const user = data.users.find(person => Number(person.id) === Number(membership.user_id));
-      return user ? [{
+      return user && user.system_role !== 'md' ? [{
         id: Number(user.id), name: user.name, employee_number: user.employee_number, is_active: user.is_active,
-        designation: user.designation, responsibility: membership.responsibility, responsibility_title: membership.responsibility_title,
+        designation: user.designation, system_role: user.system_role,
+        responsibility: draft[user.id]?.responsibility ?? membership.responsibility,
+        saved_responsibility: membership.responsibility, responsibility_title: membership.responsibility_title,
       }] : [];
     }).sort((a, b) => a.name.localeCompare(b.name));
   const saved = data.reporting.filter(link => String(link.department_id) === departmentId)
-    .map(link => ({ user_id: Number(link.user_id), manager_id: Number(link.manager_id) }));
+    .map(link => ({ user_id: Number(link.user_id), manager_id: Number(link.manager_id) }))
+    .filter(link => people.some(item => item.id === link.user_id) && people.some(item => item.id === link.manager_id));
   const savedManagers = id => saved.filter(link => link.user_id === id).map(link => link.manager_id).sort((a, b) => a - b);
   const pending = Object.keys(draft);
   const dirty = pending.length > 0;
@@ -58,17 +61,22 @@ export default function DepartmentReporting({ data, onSaved }) {
     return () => window.removeEventListener('beforeunload', confirmLeave);
   }, [dirty]);
 
-  function chooseManager(managerId, checked) {
-    const next = checked ? [...currentManagers, managerId].sort((a, b) => a - b) : currentManagers.filter(id => id !== managerId);
+  function updatePerson(changes) {
+    const next = { managerIds: currentManagers, responsibility: person.responsibility, ...changes };
     setDraft(previous => {
-      const changes = { ...previous };
+      const updated = { ...previous };
       const original = previous[person.id]?.expected ?? savedManagers(person.id);
-      if (next.length === original.length && next.every((id, index) => id === original[index])) delete changes[person.id];
-      else changes[person.id] = { managerIds: next, expected: original };
-      return changes;
+      const sameManagers = next.managerIds.length === original.length && next.managerIds.every((id, index) => id === original[index]);
+      if (sameManagers && next.responsibility === person.saved_responsibility) delete updated[person.id];
+      else updated[person.id] = { ...next, expected: original, expectedResponsibility: person.saved_responsibility };
+      return updated;
     });
     setError(null);
     setMessage('');
+  }
+
+  function chooseManager(managerId, checked) {
+    updatePerson({ managerIds: checked ? [...currentManagers, managerId].sort((a, b) => a - b) : currentManagers.filter(id => id !== managerId) });
   }
 
   async function save() {
@@ -79,9 +87,12 @@ export default function DepartmentReporting({ data, onSaved }) {
       const result = await request(`/admin/departments/${departmentId}/reporting`, {
         method: 'PUT', body: { changes: pending.map(id => ({
           user_id: Number(id), manager_ids: draft[id].managerIds, expected_manager_ids: draft[id].expected,
+          ...(people.find(item => item.id === Number(id))?.system_role === 'member' ? {
+            responsibility: draft[id].responsibility, expected_responsibility: draft[id].expectedResponsibility,
+          } : {}),
         })) },
       });
-      onSaved(departmentId, result.links);
+      onSaved(departmentId, result.links, result.memberships);
       setDraft({});
       setMessage('Reporting changes saved.');
     } catch (err) {
@@ -129,6 +140,12 @@ export default function DepartmentReporting({ data, onSaved }) {
             <p>{[person.employee_number, person.responsibility_title || person.designation, reportingRoles[person.responsibility]].filter(Boolean).join(' · ')}</p>
             <small>Reports to: {currentManagers.map(id => people.find(item => item.id === id)?.name ?? 'Former member').join(', ') || 'Unassigned'}</small>
           </div></div>
+          <Field label="Workflow access" hint="Set this person’s HOF, manager or employee access in this department.">
+            <select disabled={busy || person.system_role !== 'member'} value={person.responsibility}
+              onChange={event => updatePerson({ responsibility: event.target.value })}>
+              {Object.entries(reportingRoles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </Field>
           <fieldset disabled={busy} className="reporting-manager-picker">
             <legend>Reports to</legend>
             <div className="manager-options">

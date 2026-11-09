@@ -12,7 +12,7 @@ export default function MixedAssignmentForm({ kind, row, managers, employees, se
   const initialRole = same(record?.assignee_id, session.id) ? 'own' : employees.some(person => same(person.id, record?.assignee_id) && same(person.department_id, row.department_id)) ? 'employee' : 'manager';
   const [role, setRole] = useState(initialRole), [inherit, setInherit] = useState(false);
   const planDeadline = planAssignmentDeadline(kind, row);
-  const [form, setForm] = useState({ assignee_id: record?.assignee_id || '', due_date: initialAssignmentDeadline(kind, row), instructions: record?.instructions || '', personal_weight: '' });
+  const [form, setForm] = useState({ assignee_id: record?.assignee_id || '', due_date: initialAssignmentDeadline(kind, row), instructions: record?.instructions || '' });
   const [busy, setBusy] = useState(false), [error, setError] = useState(null);
   const eligible = (role === 'employee' ? employees : managers).filter(person => same(person.department_id, row.department_id));
   const recipient = inherit ? row.delegation.assignee_id : role === 'own' ? session.id : form.assignee_id;
@@ -24,7 +24,7 @@ export default function MixedAssignmentForm({ kind, row, managers, employees, se
       await request(kpi ? '/hof/kpi-assignments' : '/hof/assignments', { method: 'POST', body: {
         plan_id: row.plan_id, ...(kpi ? { kpi_code: row.kpi_code } : { activity_code: row.activity_code, use_kpi_owner: inherit }),
         source_revision: row.source_revision, version: Number(record?.version || 0), assignee_id: Number(recipient), due_date: form.due_date || null,
-        instructions: form.instructions, proposed_personal_weight: role === 'own' || covered || form.personal_weight === '' ? null : Math.round(Number(form.personal_weight) * 100) / 10000,
+        instructions: form.instructions,
       } });
       await onSaved(kpi ? 'KPI ownership saved. Individual activity overrides were preserved.' : 'Activity ownership saved.');
     } catch (err) { setError(err); } finally { setBusy(false); }
@@ -37,7 +37,6 @@ export default function MixedAssignmentForm({ kind, row, managers, employees, se
     {!inherit && role !== 'own' && !eligible.length && <div className="hof-review-note">No eligible {role === 'employee' ? 'employees' : 'reporting managers'} were found in this department. Ask an administrator to connect the reporting structure.</div>}
     <Field label="Assignment deadline" hint={record ? 'Your saved deadline is shown. You can change it.' : planDeadline ? (kpi ? 'Filled from the latest activity deadline in this KPI. You can change it.' : 'Filled from the activity deadline in the plan. You can change it.') : 'No activity deadline is set in the plan. Choose a date if needed.'}><input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></Field>
     <Field label="Instructions"><textarea rows={3} maxLength={1000} value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })} /></Field>
-    {role !== 'own' && !covered && <Field label="Proposed personal-plan weight (%)" hint="Optional. The Plan Editor balances all of this person’s responsibilities to 100% before publication."><input type="number" min="0" max="100" step="0.01" value={form.personal_weight} onChange={e => setForm({ ...form, personal_weight: e.target.value })} placeholder="e.g. 40" /></Field>}
     {covered && <div className="form-note">This activity belongs to the same person’s delegated KPI. It is included in that linked KPA, so no second personal weight is added.</div>}
     {kpi && <div className="form-note"><Target size={18} /><span>The recipient takes responsibility for the full KPI. Unassigned activities follow that owner. Existing individual activity assignments stay visible as overrides in the same work tree.</span></div>}
     {role === 'employee' && <div className="form-note">Direct employee work appears in My tasks. Completed work is submitted to the HOF for review.</div>}
