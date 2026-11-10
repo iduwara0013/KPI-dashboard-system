@@ -146,6 +146,7 @@ class PerformancePlanController extends Controller
                 'published_revision' => $record->revision + 1, 'published_at' => now(), 'updated_at' => now(),
             ]);
             $metadata = $record->excel_source === null ? [
+                'execution_department_ids' => $memberships->pluck('department_id')->map(fn ($id) => (int) $id)->all(),
                 'hof_department_ids' => $memberships->where('responsibility', 'hof')->pluck('department_id')->map(fn ($id) => (int) $id)->all(),
             ] : [];
             $this->recordVersion($request, $plan, 'published', [], $metadata);

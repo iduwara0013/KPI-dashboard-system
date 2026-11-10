@@ -1,0 +1,35 @@
+/* A focused delivery navigation: three destinations, with related views in-page. */
+.app-shell .workspace-primary-nav{display:grid;gap:7px}
+.app-shell .workspace-primary-nav .nav-item{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:11px;min-height:66px;margin:0;color:#a5b7cc}
+.app-shell .workspace-primary-nav .nav-item>svg{flex-shrink:0}
+.app-shell .workspace-primary-nav .nav-item>span:not(.nav-count){flex:1;min-width:0;font-size:13px;font-weight:650;line-height:1.5}
+.app-shell .workspace-primary-nav .nav-item small{display:block;font-size:10px;color:#778fae;font-weight:400;margin-top:4px;line-height:1.6}
+.app-shell .workspace-primary-nav .nav-active{color:#fff;background:linear-gradient(110deg,#bf2b24,#a61916);box-shadow:0 5px 17px #0002}
+.app-shell .workspace-primary-nav .nav-active small{color:#f1c2bd}
+.app-shell .workspace-primary-nav .nav-count{display:grid;place-items:center;min-width:23px;height:23px;padding:0 6px;border-radius:7px;background:#ffffff15;color:#c9d6e7;font-size:10px}
+.app-shell .workspace-primary-nav .nav-active .nav-count{background:#ffffff24;color:#fff}
+.app-shell .workspace-nav-divider{height:1px;background:#ffffff12;margin:24px 9px 20px}
+.app-shell .sidebar .nav-caption{margin:0 14px 12px;font-size:9px;letter-spacing:1.7px;color:#7188a6}
+.app-shell .workspace-utility-link{min-height:41px;font-size:12px;padding:10px 14px;gap:12px;color:#92a8c2}
+.app-shell .workspace-utility-link>span{flex:1}
+.app-shell .workspace-utility-link>svg{flex-shrink:0}
+.app-shell .workspace-section-tabs{display:flex;align-items:center;gap:5px;padding:6px;border:1px solid #dfe7f0;border-radius:12px;background:#eaf0f7;margin:0 0 19px;overflow-x:auto}
+.app-shell .workspace-section-tabs>a{display:inline-flex;align-items:center;justify-content:center;gap:9px;flex:1;padding:12px 16px;border:1px solid transparent;border-radius:8px;color:#68809c;min-height:46px;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap;transition:background .15s,color .15s}
+.app-shell .workspace-section-tabs>a>svg{flex-shrink:0}
+.app-shell .workspace-section-tabs>a>small{display:grid;place-items:center;min-width:22px;height:21px;padding:0 6px;background:#dfe7f1;border-radius:6px;color:#627e9c;font-size:10px;font-weight:650}
+.app-shell .workspace-section-tabs>a:hover{background:#f6f9fd;color:#3e5e80}
+.app-shell .workspace-section-tabs>a.is-active{background:#fff;border-color:#dbe5f0;color:#a52f28;box-shadow:0 2px 6px #203a5810}
+.app-shell .workspace-section-tabs>a.is-active>small{background:#fff0ed;color:#b33b31}
+.app-shell .workspace-section-tabs>a:focus-visible{outline:2px solid #b83128;outline-offset:-2px}
+.app-shell .workspace-shortcuts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:24px 0}
+.app-shell .workspace-shortcuts>a{display:flex;align-items:flex-start;gap:13px;padding:22px;border:1px solid #dfe7f0;border-radius:13px;background:#fff;text-decoration:none;box-shadow:0 4px 18px #243b5305;transition:border-color .15s,box-shadow .15s;min-width:0}
+.app-shell .workspace-shortcuts>a:hover{border-color:#b8cadd;box-shadow:0 6px 22px #243b5310}
+.app-shell .workspace-shortcut-icon{width:41px;height:41px;flex-shrink:0;background:#eef4fa;border:1px solid #e0e9f3;border-radius:11px;display:grid;place-items:center;color:#5a7d9e}
+.app-shell .workspace-shortcuts>a>div{flex:1;min-width:0}
+.app-shell .workspace-shortcuts small{font-size:10px;color:#8a9ab0;line-height:1.7}
+.app-shell .workspace-shortcuts h3{font-size:15px;color:#304f70;line-height:1.6;font-weight:700;margin:4px 0}
+.app-shell .workspace-shortcuts p{font-size:12px;color:#748ba4;line-height:1.8;margin:0}
+.app-shell .workspace-shortcuts>a>svg{flex-shrink:0;color:#8b9fb6;margin-top:11px}
+.app-shell .workspace-shortcuts>a:focus-visible{outline:2px solid #af352c;outline-offset:2px}
+@media(max-width:700px){.app-shell .workspace-section-tabs{padding:5px;gap:3px}.app-shell .workspace-section-tabs>a{padding:11px 12px;gap:7px;font-size:12px;flex-shrink:0;flex-basis:auto}.app-shell .workspace-shortcuts{grid-template-columns:1fr}.app-shell .workspace-shortcuts>a{padding:19px}}
+@media(prefers-reduced-motion:reduce){.app-shell .workspace-section-tabs>a,.app-shell .workspace-shortcuts>a{transition:none}}

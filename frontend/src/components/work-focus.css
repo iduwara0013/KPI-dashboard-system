@@ -1,0 +1,34 @@
+.work-focus.work-focus-premium{border:1px solid #dee6f0;border-radius:16px;box-shadow:0 4px 18px #243b5305;margin-bottom:26px;overflow:hidden;background:#fff}
+.work-focus-premium>header{display:flex;align-items:center;gap:16px;padding:24px 26px;background:linear-gradient(110deg,#fff,#f8fafd);border-bottom:1px solid #e8edf4}
+.work-focus-premium .focus-heading-icon{display:grid;place-items:center;flex-shrink:0;width:48px;height:48px;border-radius:13px;color:#b32822;background:#fff1ef;border:1px solid #f2dcd8}
+.work-focus-premium>header>div{flex:1;min-width:0}
+.work-focus-premium h2{font-size:22px;line-height:1.5;font-weight:750;letter-spacing:-.5px;margin:5px 0;color:#253d59}
+.work-focus-premium header p{font-size:13px;line-height:1.8;color:#73869f;margin-top:4px}
+.work-focus-premium .focus-count{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;font-size:12px;color:#526f8c;background:#eef3f9;border-color:#dfe8f2}
+.work-focus-premium .focus-count>span{width:6px;height:6px;border-radius:50%;background:#7594b4}
+.work-focus-premium .focus-list{padding:5px 18px}
+.work-focus-premium .focus-row{gap:16px;padding:20px 10px;background:#fff;border-top:1px solid #eaf0f6;border-radius:8px;transition:background .15s;min-height:104px}
+.work-focus-premium .focus-row:first-child{border-top-color:transparent}
+.work-focus-premium .focus-row:hover{background:#f6f9fc}
+.work-focus-premium .focus-row:focus-visible{outline:2px solid #b42c25;outline-offset:-2px;background:#f8fafd}
+.work-focus-premium .focus-row-icon{width:45px;height:45px;border-radius:12px;background:#edf3fa;color:#5c7ea6;border:1px solid #dfe9f4}
+.work-focus-premium .focus-row-icon.danger{background:#fff1ee;border-color:#f2d8d1;color:#b74534}
+.work-focus-premium .focus-row-icon.warning{background:#fff8e9;border-color:#f2e2bd;color:#a1772f}
+.work-focus-premium .focus-row-copy strong{font-size:15px;color:#2a4562;font-weight:700;line-height:1.65;overflow-wrap:anywhere}
+.work-focus-premium .focus-row-copy small{font-size:12px;color:#7489a1;margin-top:6px;line-height:1.8;overflow-wrap:anywhere}
+.work-focus-premium .focus-row-facts{min-width:150px;gap:5px;justify-items:end}
+.work-focus-premium .focus-deadline{font-size:12px;color:#506e8f;gap:6px}
+.work-focus-premium .focus-deadline.danger{color:#b74534}
+.work-focus-premium .focus-deadline.warning{color:#9c702b}
+.work-focus-premium .focus-row-facts time{font-size:11px;color:#7d90a7}
+.work-focus-premium .focus-status{display:inline-block;border:1px solid #dfe8f2;border-radius:5px;padding:3px 8px;font-size:11px;color:#5e7d9e;background:#f1f5fa}
+.work-focus-premium .focus-status.danger{color:#a84231;background:#fff3ee;border-color:#f0d8ce}
+.work-focus-premium .focus-status.warning{color:#916c28;background:#fff8e9;border-color:#eddfbd}
+.work-focus-premium .focus-open{display:flex;align-items:center;gap:6px;color:#a42b24;background:#fff;border:1px solid #eadeda;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:650;margin-left:8px;flex-shrink:0}
+.work-focus-premium .focus-row:hover .focus-open{background:#fff3f0;border-color:#dfbdb7}
+.work-focus-premium .focus-clear{padding:24px 27px;border:0;background:#f8fcfa}
+.work-focus-premium .focus-clear strong{font-size:14px;color:#43735e}
+.work-focus-premium .focus-clear p{font-size:12px;line-height:1.8}
+.work-focus-premium .focus-more{font-size:11px;color:#778ca3;padding:13px 27px;background:#fafcfe;border-top:1px solid #edf1f6}
+@media(max-width:700px){.work-focus-premium>header{padding:20px;gap:12px;flex-wrap:wrap}.work-focus-premium .focus-heading-icon{width:40px;height:40px}.work-focus-premium h2{font-size:19px}.work-focus-premium header p{font-size:12px}.work-focus-premium .focus-count{margin-left:52px;font-size:11px}.work-focus-premium .focus-list{padding:3px 12px}.work-focus-premium .focus-row{padding:17px 7px;gap:11px;flex-wrap:wrap}.work-focus-premium .focus-row-icon{width:40px;height:40px}.work-focus-premium .focus-row-copy{min-width:calc(100% - 55px);flex:1}.work-focus-premium .focus-row-copy strong{font-size:14px}.work-focus-premium .focus-row-facts{margin-left:51px;min-width:0;flex:1;text-align:left;justify-items:start}.work-focus-premium .focus-open{margin-left:auto}.work-focus-premium .focus-row-copy small{font-size:12px}}
+@media(prefers-reduced-motion:reduce){.work-focus-premium .focus-row{transition:none}}

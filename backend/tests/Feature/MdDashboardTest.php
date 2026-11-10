@@ -21,7 +21,7 @@ class MdDashboardTest extends TestCase
         }
         $this->getJson('/api/md/workspace?year=1900')->assertUnprocessable();
         $md->update(['is_active' => false]);
-        $this->actingAs($md)->getJson('/api/md/workspace')->assertForbidden();
+        $this->actingAs($md)->getJson('/api/md/workspace')->assertUnauthorized();
     }
 
     public function test_other_roles_cannot_open_executive_data(): void

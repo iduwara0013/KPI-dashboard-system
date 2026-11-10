@@ -5,3 +5,8 @@ backend/.env
 backend/database/*.sqlite*
 .dev/
 *.log
+playwright-report/
+test-results/
+frontend/playwright-report/
+frontend/test-results/
+frontend/eslint-results.json

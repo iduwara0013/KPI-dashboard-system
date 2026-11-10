@@ -80,7 +80,7 @@ class ExcelPlanImportTest extends TestCase
         $this->postJson($planUrl.'/publish', ['revision' => 4])->assertForbidden();
         $this->actingAs($other)->getJson($planUrl)->assertForbidden();
         $md = User::factory()->create(['system_role' => 'md', 'is_active' => true]);
-        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertOk()->assertJsonCount(0, 'activities');
+        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertOk()->assertJsonCount(2, 'activities');
     }
 
     public function test_bad_weights_are_rejected_during_preview(): void

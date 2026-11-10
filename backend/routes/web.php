@@ -15,6 +15,7 @@ use App\Http\Controllers\SessionController;
 use App\Http\Controllers\TvDisplayController;
 use App\Http\Middleware\EnforceExecutiveReadOnly;
 use App\Http\Middleware\EnsureWorkspaceIdentity;
+use App\Http\Middleware\NormalizeJsonIdentifiers;
 use App\Http\Middleware\RequireDeliveryAccess;
 use App\Http\Middleware\RequirePlanningAccess;
 use App\Http\Middleware\RequireSystemAdmin;
@@ -24,11 +25,12 @@ Route::get('/', function () {
     return response()->json(['application' => 'Pulse administration API', 'frontend' => 'http://127.0.0.1:5173']);
 });
 
-Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecutiveReadOnly::class])->group(function () {
+Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecutiveReadOnly::class, NormalizeJsonIdentifiers::class])->group(function () {
     Route::get('/session', [SessionController::class, 'show']);
     Route::get('/organization-chart', [OrganizationChartController::class, 'show'])->middleware('auth');
     Route::get('/display/workspace', [TvDisplayController::class, 'workspace'])->middleware('auth');
     Route::middleware('auth')->group(function () {
+        Route::post('/notifications/{notification}/archive', [NotificationController::class, 'archive'])->whereNumber('notification');
         Route::get('/notifications', [NotificationController::class, 'index']);
         Route::post('/notifications/read-all', [NotificationController::class, 'read']);
         Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])->whereNumber('notification');
@@ -49,6 +51,7 @@ Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecuti
     });
     Route::middleware(['auth', RequireDeliveryAccess::class])->prefix('delivery')->group(function () {
         Route::get('/workspace', [DeliveryController::class, 'workspace']);
+        Route::post('/personal-plan/start', [DeliveryController::class, 'startPersonalWork'])->middleware('throttle:30,1');
         Route::put('/assignments/{assignment}/tasks', [DeliveryController::class, 'breakdown'])->whereNumber('assignment')->middleware('throttle:30,1');
         Route::put('/tasks/{task}/progress', [DeliveryController::class, 'progress'])->whereNumber('task')->middleware('throttle:30,1');
         Route::put('/tasks/{task}/tasks', [DeliveryController::class, 'breakdownTask'])->whereNumber('task')->middleware('throttle:30,1');

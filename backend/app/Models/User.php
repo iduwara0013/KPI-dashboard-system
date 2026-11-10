@@ -17,6 +17,11 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
+    public function sessionFingerprint(): string
+    {
+        return hash_hmac('sha256', json_encode([$this->id, $this->getAuthPassword(), $this->getRememberToken()]), config('app.key'));
+    }
+
     /**
      * Get the attributes that should be cast.
      *

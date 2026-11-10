@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\NotificationController;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -140,6 +141,7 @@ class MixedAssignmentsTest extends TestCase
         $this->assertEquals(1, DB::table('work_notifications')->where('user_id', $this->manager->id)->count());
         $this->travelTo(now()->setDate(2027, 1, 5)->startOfDay());
         $md = User::factory()->create(['system_role' => 'md', 'is_active' => true]);
+        NotificationController::remind($md);
         $this->actingAs($md)->getJson('/api/notifications')->assertOk()->assertJsonPath('items.0.type', 'overdue')->assertJsonPath('items.0.target.year', 2026)->assertJsonPath('items.0.target.workspace', 'md');
         $this->postJson('/api/notifications/read-all')->assertOk();
         $this->getJson('/api/notifications')->assertJsonPath('unread', 0);

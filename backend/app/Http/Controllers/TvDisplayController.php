@@ -49,7 +49,7 @@ class TvDisplayController extends Controller
             $managerTeam[$department] = $descendants;
         }
         $members = collect($chart['people'])->filter(fn ($person) => in_array($person['department_id'], $ids)
-            && (! isset($data['department']) || $person['department_id'] === (int) $data['department'])
+            && (! isset($data['department']) || (int) $person['department_id'] === (int) $data['department'])
             && ($md || in_array($person['department_id'], $hofIds)
                 || in_array($person['id'], $managerTeam[$person['department_id']] ?? [])
                 || $person['responsibility'] === 'hof'));

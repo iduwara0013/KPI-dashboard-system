@@ -1,0 +1,11 @@
+import { ArrowRight, Target } from 'lucide-react';
+import { Badge, Empty, RouteLink } from '../../components/ui.jsx';
+import { workspacePath } from '../../app/workspaceRoutes.js';
+import { pct } from './deliveryFormat.js';
+
+export default function KpiResponsibilities({ rows, person, department, onWork, onPersonal }) {
+  return <section className="panel"><div className="panel-heading"><div><h2>Linked KPAs from delegated HOF KPIs <span className="count-label">{rows.length}</span></h2><p>Overall responsibility includes the original activities and any individual owner overrides</p></div><button className="text-button" onClick={onPersonal}>Set personal weights <ArrowRight size={14} /></button></div>{!rows.length ? <Empty icon={Target} title="No complete KPIs delegated to you yet" text="Your HOF can assign a complete KPI or continue assigning individual activities." /> : rows.map(kpi => {
+    const workPage = kpi.delegation.recipient_role === 'manager' ? 'activities' : 'tasks';
+    return <article className="mixed-kpi-card" key={kpi.delegation.id}><div><small>LINKED KPA · {department(kpi.department_id)} · {kpi.year}</small><h3>{kpi.kpi_title}</h3><p>Source: {kpi.kpa_title} → HOF KPI {kpi.kpi_code}</p><p>HOF: {person(kpi.delegation.owner_id)} · Target {kpi.target_value}{kpi.target_unit === 'percent' ? '%' : ` ${kpi.target_unit}`} · {kpi.frequency}</p>{!kpi.valid && <div className="delivery-warning">The KPI scope or ownership changed. Ask the HOF to review this delegation before publishing a personal allocation.</div>}<ul>{kpi.activities.map(row => <li key={row.activity_code}><span>{row.activity}<small>{row.assignment ? `Owner: ${person(row.assignment.assignee_id)} · ${row.assignment.ownership_mode === 'activity' ? 'Individual override' : 'Follows KPI owner'}` : 'Unassigned — HOF review needed'}</small></span><strong>{pct(row.activity_weight)}</strong><Badge>{Number(row.assignment?.confirmed_progress || 0)}% approved</Badge></li>)}</ul></div><div className="mixed-kpi-action"><Badge>{kpi.confirmed_progress}% approved work completion</Badge><RouteLink className="btn btn-secondary" href={workspacePath('delivery', workPage)} onNavigate={() => onWork(workPage)}>{workPage === 'activities' ? 'My assigned activities' : 'My tasks'} <ArrowRight size={14} /></RouteLink></div></article>;
+  })}</section>;
+}

@@ -205,15 +205,15 @@ class OrganizationAdminTest extends TestCase
         $this->assertDatabaseHas('admin_activity', ['action' => 'md.department_links_removed', 'subject' => $director->name]);
     }
 
-    public function test_person_form_accepts_five_character_password_and_free_department_responsibilities(): void
+    public function test_person_form_requires_six_character_password_and_accepts_free_department_responsibilities(): void
     {
         $first = $this->department();
         $second = $this->department('DC');
-        $payload = $this->payload(['password' => 'abc12', 'memberships' => [
+        $payload = $this->payload(['password' => 'Abc123', 'memberships' => [
             ['department_id' => $first, 'responsibility_title' => 'Information Systems Coordinator'],
             ['department_id' => $second, 'responsibility_title' => 'Acting Data Center Lead'],
         ]]);
-        $this->actingAs($this->admin())->postJson('/api/admin/users', [...$payload, 'password' => '1234'])
+        $this->actingAs($this->admin())->postJson('/api/admin/users', [...$payload, 'password' => 'Abc12'])
             ->assertUnprocessable()->assertJsonValidationErrors('password');
         $id = $this->postJson('/api/admin/users', $payload)->assertCreated()->json('user.id');
         $this->assertDatabaseHas('department_memberships', [
@@ -221,7 +221,25 @@ class OrganizationAdminTest extends TestCase
             'responsibility_title' => 'Information Systems Coordinator',
         ]);
         $this->postJson('/api/logout')->assertOk();
-        $this->postJson('/api/login', ['email' => $payload['email'], 'password' => 'abc12'])->assertOk();
+        $this->postJson('/api/login', ['email' => $payload['email'], 'password' => 'Abc123'])->assertOk();
+    }
+
+    public function test_password_reset_removes_only_the_affected_users_database_sessions(): void
+    {
+        $admin = $this->admin();
+        $person = User::factory()->create(['system_role' => 'plan_editor', 'is_active' => true]);
+        foreach ([['security-person', $person->id], ['security-admin', $admin->id]] as [$id, $user]) {
+            DB::table('sessions')->insert(['id' => $id, 'user_id' => $user, 'payload' => '', 'last_activity' => now()->timestamp]);
+        }
+        config(['session.driver' => 'database']);
+        $oldToken = $person->getRememberToken();
+        $this->actingAs($admin)->putJson('/api/admin/users/'.$person->id, $this->payload([
+            'employee_number' => $person->employee_number, 'email' => $person->email,
+            'system_role' => 'plan_editor', 'password' => 'Replacement passphrase 2026',
+        ]))->assertOk();
+        $this->assertDatabaseMissing('sessions', ['id' => 'security-person']);
+        $this->assertDatabaseHas('sessions', ['id' => 'security-admin']);
+        $this->assertNotSame($oldToken, $person->fresh()->getRememberToken());
     }
 
     public function test_editing_person_details_preserves_reporting_and_workflow_access(): void
@@ -269,7 +287,8 @@ class OrganizationAdminTest extends TestCase
 
     public function test_one_hof_can_belong_to_two_departments_and_audit_excludes_passwords(): void
     {
-        $a = $this->department(); $b = $this->department('DIG');
+        $a = $this->department();
+        $b = $this->department('DIG');
         $payload = $this->payload(['memberships' => [
             ['department_id' => $a, 'responsibility' => 'hof', 'manager_ids' => []],
             ['department_id' => $b, 'responsibility' => 'hof', 'manager_ids' => []],
@@ -301,9 +320,13 @@ class OrganizationAdminTest extends TestCase
 
     public function test_multiple_reporting_managers_and_same_manager_across_departments_are_supported(): void
     {
-        $a = $this->department(); $b = $this->department('DIG');
-        $manager = User::factory()->create(); $hof = User::factory()->create();
-        $this->membership($manager, $a); $this->membership($manager, $b); $this->membership($hof, $a, 'hof');
+        $a = $this->department();
+        $b = $this->department('DIG');
+        $manager = User::factory()->create();
+        $hof = User::factory()->create();
+        $this->membership($manager, $a);
+        $this->membership($manager, $b);
+        $this->membership($hof, $a, 'hof');
         $payload = $this->payload(['memberships' => [
             ['department_id' => $a, 'responsibility' => 'employee', 'manager_ids' => [$manager->id, $hof->id]],
             ['department_id' => $b, 'responsibility' => 'employee', 'manager_ids' => [$manager->id]],
@@ -314,8 +337,10 @@ class OrganizationAdminTest extends TestCase
 
     public function test_cross_department_reporting_is_rejected_without_partial_user_creation(): void
     {
-        $a = $this->department(); $b = $this->department('FIN');
-        $manager = User::factory()->create(); $this->membership($manager, $b);
+        $a = $this->department();
+        $b = $this->department('FIN');
+        $manager = User::factory()->create();
+        $this->membership($manager, $b);
         $payload = $this->payload(['memberships' => [['department_id' => $a, 'responsibility' => 'employee', 'manager_ids' => [$manager->id]]]]);
         $this->actingAs($this->admin())->postJson('/api/admin/users', $payload)->assertUnprocessable();
         $this->assertDatabaseMissing('users', ['employee_number' => 'EMP100']);
@@ -324,8 +349,11 @@ class OrganizationAdminTest extends TestCase
 
     public function test_reporting_cycles_and_self_reporting_are_rejected(): void
     {
-        $d = $this->department(); $a = User::factory()->create(); $b = User::factory()->create();
-        $this->membership($a, $d); $this->membership($b, $d);
+        $d = $this->department();
+        $a = User::factory()->create();
+        $b = User::factory()->create();
+        $this->membership($a, $d);
+        $this->membership($b, $d);
         DB::table('reporting_relationships')->insert(['department_id' => $d, 'user_id' => $b->id, 'manager_id' => $a->id]);
         $payload = $this->payload(['email' => $a->email, 'memberships' => [['department_id' => $d, 'responsibility' => 'manager', 'manager_ids' => [$b->id]]]]);
         $this->actingAs($this->admin())->putJson('/api/admin/users/'.$a->id, $payload)->assertUnprocessable();
@@ -336,7 +364,9 @@ class OrganizationAdminTest extends TestCase
 
     public function test_managers_with_reporting_people_cannot_be_removed_or_deactivated(): void
     {
-        $d = $this->department(); $manager = User::factory()->create(); $employee = User::factory()->create();
+        $d = $this->department();
+        $manager = User::factory()->create();
+        $employee = User::factory()->create();
         $this->membership($manager, $d);
         DB::table('reporting_relationships')->insert(['department_id' => $d, 'user_id' => $employee->id, 'manager_id' => $manager->id]);
         $this->actingAs($this->admin())->putJson('/api/admin/users/'.$manager->id, $this->payload(['email' => $manager->email, 'is_active' => false]))->assertUnprocessable();
@@ -353,7 +383,8 @@ class OrganizationAdminTest extends TestCase
 
     public function test_unique_identifiers_and_duplicate_department_memberships_are_rejected(): void
     {
-        $admin = $this->admin(); $d = $this->department();
+        $admin = $this->admin();
+        $d = $this->department();
         $this->actingAs($admin)->postJson('/api/admin/users', $this->payload())->assertCreated();
         $this->postJson('/api/admin/users', $this->payload())->assertUnprocessable()->assertJsonValidationErrors(['email', 'employee_number']);
         $m = ['department_id' => $d, 'responsibility' => 'employee', 'manager_ids' => []];
@@ -372,7 +403,8 @@ class OrganizationAdminTest extends TestCase
 
     public function test_department_with_members_cannot_be_archived(): void
     {
-        $d = $this->department(); $this->membership(User::factory()->create(), $d, 'employee');
+        $d = $this->department();
+        $this->membership(User::factory()->create(), $d, 'employee');
         $this->actingAs($this->admin())->putJson('/api/admin/departments/'.$d, [
             'name' => 'IT department', 'code' => 'IT', 'color' => '#23796b', 'is_active' => false,
         ])->assertUnprocessable()->assertJsonValidationErrors('is_active');
@@ -380,7 +412,9 @@ class OrganizationAdminTest extends TestCase
 
     public function test_edit_preserves_password_unless_replaced_and_persists_membership_changes(): void
     {
-        $employee = User::factory()->create(); $hash = $employee->password; $d = $this->department();
+        $employee = User::factory()->create();
+        $hash = $employee->password;
+        $d = $this->department();
         $payload = $this->payload(['email' => $employee->email, 'password' => '', 'memberships' => [
             ['department_id' => $d, 'responsibility' => 'hof', 'manager_ids' => []],
         ]]);

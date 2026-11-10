@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class MdDashboardController extends Controller
@@ -50,7 +51,7 @@ class MdDashboardController extends Controller
                         'id' => $task->id, 'parent_task_id' => $task->parent_task_id, 'title' => $task->title,
                         'owner' => $people[$task->assignee_id]->name ?? 'Previous owner',
                         'reviewer' => app(DeliveryController::class)->selfConfirmable($task, $assignment) ? 'HOF confirmation' : ($people[$task->reviewer_id]->name ?? 'Previous reviewer'),
-                        'weight' => (float) $task->weight, 'confirmed_progress' => (float) $task->confirmed_progress,
+                        'weight' => (float) $task->weight, 'activity_weight' => $this->activityWeight($task, $tasks->keyBy('id')), 'confirmed_progress' => (float) $task->confirmed_progress,
                         'status' => $task->status, 'due_date' => $task->due_date ? substr((string) $task->due_date, 0, 10) : null,
                     ])->all(),
                 ];
@@ -58,5 +59,20 @@ class MdDashboardController extends Controller
         }
 
         return $rows;
+    }
+
+    private function activityWeight(object $task, Collection $tasks): float
+    {
+        $weight = (float) $task->weight;
+        while ($task->parent_task_id !== null) {
+            $parent = $tasks->get($task->parent_task_id);
+            if (! $parent || (int) $parent->id >= (int) $task->id) {
+                return 0;
+            }
+            $weight *= (float) $parent->weight;
+            $task = $parent;
+        }
+
+        return round($weight, 8);
     }
 }

@@ -126,4 +126,20 @@ class MonthlyKpiResultTest extends TestCase
     {
         return ['plan_id' => $row['plan_id'], 'kpi_code' => $row['kpi_code'], 'context' => $row['context']];
     }
+
+    public function test_monthly_notifications_follow_correction_resubmission_and_approval(): void
+    {
+        $manager = $this->person('EMP004');
+        $this->actingAs($this->hof)->postJson('/api/hof/kpi-assignments', ['plan_id' => $this->plan, 'kpi_code' => 'UPTIME', 'source_revision' => 2, 'version' => 0, 'assignee_id' => $manager->id])->assertOk();
+        $row = $this->actingAs($manager)->getJson('/api/kpi-results/workspace?period=2026-11')->json('rows.0');
+        $payload = [...$this->context($row), 'month' => 11, 'attempt' => 0, 'actual_value' => 95, 'evidence' => 'Monitoring report.'];
+        $this->postJson('/api/kpi-results/submit', $payload)->assertCreated();
+        $this->actingAs($this->hof)->getJson('/api/notifications?view=actions&category=reviews')->assertJsonPath('items.0.type', 'kpi_submission')->assertJsonPath('items.0.target.period', '2026-11');
+        $this->postJson('/api/kpi-results/review', [...$this->context($row), 'month' => 11, 'attempt' => 1, 'decision' => 'needs_correction', 'review_note' => 'Attach the correct source.'])->assertOk();
+        $this->getJson('/api/notifications?view=actions&category=reviews')->assertJsonCount(0, 'items');
+        $this->actingAs($manager)->getJson('/api/notifications?view=actions&category=decisions')->assertJsonPath('items.0.type', 'kpi_needs_correction');
+        $this->postJson('/api/kpi-results/submit', [...$payload, 'attempt' => 1])->assertCreated();
+        $this->actingAs($this->hof)->postJson('/api/kpi-results/review', [...$this->context($row), 'month' => 11, 'attempt' => 2, 'decision' => 'approved'])->assertOk();
+        $this->actingAs($manager)->getJson('/api/notifications?category=decisions')->assertJsonPath('items.0.type', 'kpi_approved')->assertJsonPath('items.0.action_required', false);
+    }
 }

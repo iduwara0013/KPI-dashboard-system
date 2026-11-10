@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\NotificationController;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -96,7 +97,7 @@ class DeliveryWorkflowTest extends TestCase
         DB::table('personal_weight_proposals')->insert([
             'owner_id' => $this->manager->id, 'actor_id' => $this->hof->id, 'source_key' => 'unrelated-source', 'weight' => 0.2,
         ]);
-        \App\Http\Controllers\NotificationController::send($this->manager->id, 'unrelated-test', 'assignment', 'Another plan notification.', ['workspace' => 'delivery', 'page' => 'tasks']);
+        NotificationController::send($this->manager->id, 'unrelated-test', 'assignment', 'Another plan notification.', ['workspace' => 'delivery', 'page' => 'tasks']);
         $url = '/api/planning/plans/'.$this->plan;
         $this->getJson($url.'/deletion')->assertForbidden();
         $this->actingAs($this->editor);
@@ -185,6 +186,10 @@ class DeliveryWorkflowTest extends TestCase
         $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertJsonPath('activities.0.approved', 100);
         DB::table('reporting_relationships')->where('user_id', $junior->id)->delete();
         $this->getJson('/api/md/workspace?year=2026')->assertJsonPath('activities.0.approved', 0);
+        $executiveRows = $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertOk()->json('activities');
+        $taskDetail = collect($executiveRows)->flatMap(fn ($row) => $row['tasks'])->firstWhere('id', $child->id);
+        $this->assertEquals(0.8, $taskDetail['weight']);
+        $this->assertEquals(0.56, $taskDetail['activity_weight']);
         $version = DB::table('work_assignments')->where('id', $this->assignment)->value('version');
         $this->actingAs($this->hof)->postJson('/api/hof/assignments', [
             'plan_id' => $this->plan, 'activity_code' => 'ACT-SPEC', 'source_revision' => 2,
@@ -282,6 +287,7 @@ class DeliveryWorkflowTest extends TestCase
     {
         $this->travelTo(now()->setDate(2026, 12, 3)->startOfDay());
         [$task] = $this->allocate();
+        NotificationController::remind($this->employee);
         $this->actingAs($this->employee)->getJson('/api/notifications')->assertJsonPath('items.0.type', 'overdue');
         $count = DB::table('work_notifications')->where('type', 'overdue')->count();
         $id = DB::table('work_notifications')->where('type', 'overdue')->value('id');
@@ -289,12 +295,14 @@ class DeliveryWorkflowTest extends TestCase
         $this->getJson('/api/notifications')->assertJsonPath('items.0.read_at', DB::table('work_notifications')->where('id', $id)->value('read_at'));
         $this->assertDatabaseCount('work_notifications', 3 + $count);
         $this->travel(1)->days();
+        NotificationController::remind($this->employee);
         $this->getJson('/api/notifications')->assertOk();
         $this->assertEquals($count + 1, DB::table('work_notifications')->where('type', 'overdue')->count());
         $submission = $this->submitTask($this->employee, $task);
         $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
         $count = DB::table('work_notifications')->where('type', 'overdue')->count();
         $this->travel(1)->days();
+        NotificationController::remind($this->employee);
         $this->actingAs($this->employee)->getJson('/api/notifications')->assertOk();
         $this->assertEquals($count, DB::table('work_notifications')->where('type', 'overdue')->count());
         $this->artisan('notifications:overdue')->assertSuccessful();
@@ -306,6 +314,7 @@ class DeliveryWorkflowTest extends TestCase
         $version = DB::table('work_assignments')->where('id', $this->assignment)->value('version');
         $this->actingAs($this->hof)->postJson('/api/hof/assignments', ['plan_id' => $this->plan, 'activity_code' => 'ACT-SPEC', 'source_revision' => 2, 'version' => $version, 'assignee_id' => $this->hof->id])->assertOk();
         $this->travelTo(now()->setDate(2026, 12, 5)->startOfDay());
+        NotificationController::remind($this->employee);
         $this->actingAs($this->employee)->getJson('/api/notifications')->assertOk();
         $this->assertEquals(0, DB::table('work_notifications')->where('user_id', $this->employee->id)->where('type', 'overdue')->count());
     }
@@ -375,5 +384,81 @@ class DeliveryWorkflowTest extends TestCase
         $this->actingAs($this->user('EMP006'))->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertForbidden();
         $this->manager->update(['is_active' => false]);
         $this->actingAs($this->employee)->getJson('/api/delivery/workspace')->assertJsonCount(0, 'tasks');
+    }
+
+    public function test_negative_and_excessive_task_weights_do_not_change_the_saved_breakdown(): void
+    {
+        foreach ([-0.1, 1.5] as $weight) {
+            $payload = $this->breakdownPayload();
+            $payload['tasks'][0]['weight'] = $weight;
+            $this->putJson('/api/delivery/assignments/'.$this->assignment.'/tasks', $payload)->assertUnprocessable();
+            $this->assertDatabaseCount('delivery_tasks', 0);
+            $this->assertDatabaseHas('work_assignments', ['id' => $this->assignment, 'version' => 1, 'confirmed_progress' => 0]);
+        }
+    }
+
+    public function test_replaying_an_approval_cannot_double_count_work_or_change_a_decision(): void
+    {
+        [$task] = $this->allocate();
+        $submission = $this->submitTask($this->employee, $task);
+        $url = '/api/delivery/submissions/'.$submission.'/review';
+        $this->actingAs($this->manager)->postJson($url, ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $version = (int) DB::table('delivery_tasks')->where('id', $task)->value('version');
+        $this->postJson($url, ['version' => 2, 'decision' => 'approved'])->assertConflict();
+        $this->postJson($url, ['version' => $version, 'decision' => 'needs_changes', 'review_note' => 'Replayed decision'])->assertConflict();
+        $this->assertDatabaseHas('task_submissions', ['id' => $submission, 'decision' => 'approved']);
+        $this->assertDatabaseHas('work_assignments', ['id' => $this->assignment, 'confirmed_progress' => 30]);
+        $this->assertDatabaseHas('delivery_tasks', ['id' => $task, 'version' => $version, 'confirmed_progress' => 100]);
+    }
+
+    public function test_notification_actions_follow_work_state_and_target_exact_submission(): void
+    {
+        [$task] = $this->allocate();
+        $feed = $this->actingAs($this->employee)->getJson('/api/notifications?view=actions&category=assignments')->assertOk()->assertJsonCount(1, 'items');
+        $feed->assertJsonPath('items.0.target.task_id', $task)->assertJsonPath('items.0.action_required', true);
+        $id = $feed->json('items.0.id');
+        $this->postJson('/api/notifications/'.$id.'/read')->assertOk();
+        $this->getJson('/api/notifications?view=actions&category=assignments')->assertJsonCount(1, 'items');
+        $this->postJson('/api/delivery/tasks/'.$task.'/submit', ['version' => 1, 'evidence' => 'Requirements documented and checked.'])->assertOk();
+        $submission = (int) DB::table('task_submissions')->where('task_id', $task)->value('id');
+        $this->actingAs($this->manager)->getJson('/api/notifications?view=actions&category=reviews')
+            ->assertJsonCount(1, 'items')->assertJsonPath('items.0.target.task_id', $task)->assertJsonPath('items.0.target.submission_id', $submission);
+        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $this->getJson('/api/notifications?view=actions&category=reviews')->assertJsonCount(0, 'items');
+        $this->actingAs($this->employee)->getJson('/api/notifications?view=actions&category=assignments')->assertJsonCount(0, 'items');
+        $this->getJson('/api/notifications?category=decisions')->assertJsonPath('items.0.work_state', 'approved')->assertJsonPath('items.0.action_required', false);
+    }
+
+    public function test_due_soon_reminders_are_deduplicated_and_stop_after_approval(): void
+    {
+        [$task] = $this->allocate();
+        DB::table('delivery_tasks')->where('id', $task)->update(['due_date' => now('Asia/Colombo')->addDay()->toDateString()]);
+        NotificationController::remind($this->employee);
+        $feed = $this->actingAs($this->employee)->getJson('/api/notifications?category=deadlines')->assertOk()->assertJsonCount(1, 'items');
+        $feed->assertJsonPath('items.0.type', 'due_soon');
+        $this->getJson('/api/notifications?category=deadlines')->assertJsonCount(1, 'items');
+        $this->postJson('/api/delivery/tasks/'.$task.'/submit', ['version' => 1, 'evidence' => 'Work delivered.'])->assertOk();
+        $submission = (int) DB::table('task_submissions')->where('task_id', $task)->value('id');
+        $this->actingAs($this->manager)->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $count = DB::table('work_notifications')->where('user_id', $this->employee->id)->count();
+        $this->travel(1)->days();
+        NotificationController::remind($this->employee);
+        $this->actingAs($this->employee)->getJson('/api/notifications')->assertOk();
+        $this->assertEquals($count, DB::table('work_notifications')->where('user_id', $this->employee->id)->count());
+    }
+
+    public function test_polling_is_read_only_and_reuses_task_state_within_one_feed(): void
+    {
+        [$task] = $this->allocate();
+        for ($i = 0; $i < 35; $i++) {
+            NotificationController::send($this->employee->id, 'repeat-task:'.$i, 'assignment', 'Task update', ['workspace' => 'delivery', 'page' => 'tasks', 'task_id' => $task]);
+        }
+        $before = DB::table('work_notifications')->count();
+        DB::enableQueryLog();
+        $this->actingAs($this->employee)->getJson('/api/notifications?limit=60')->assertOk()->assertJsonCount(36, 'items');
+        $queries = collect(DB::getQueryLog())->filter(fn ($query) => str_contains($query['query'], 'task_submissions'));
+        DB::disableQueryLog();
+        $this->assertCount(1, $queries);
+        $this->assertDatabaseCount('work_notifications', $before);
     }
 }

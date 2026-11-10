@@ -34,6 +34,7 @@ class SessionController extends Controller
         }
 
         $request->session()->regenerate();
+        $request->session()->put('account_fingerprint', $request->user()->sessionFingerprint());
 
         if (! in_array($request->user()->system_role, ['super_admin', 'md'], true) && ! RequirePlanningAccess::canView($request->user()) && RequireDeliveryAccess::roles($request->user()) === []) {
             Auth::logout();
@@ -47,7 +48,7 @@ class SessionController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        Auth::logout();
+        Auth::guard('web')->logoutCurrentDevice();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 

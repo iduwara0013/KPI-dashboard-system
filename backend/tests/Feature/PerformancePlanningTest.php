@@ -83,7 +83,7 @@ class PerformancePlanningTest extends TestCase
         $this->putJson('/api/planning/plans/1', [])->assertForbidden();
         $this->postJson('/api/planning/plans/1/publish', [])->assertForbidden();
         $hof->update(['is_active' => false]);
-        $this->actingAs($hof)->getJson('/api/planning/workspace')->assertForbidden();
+        $this->actingAs($hof)->getJson('/api/planning/workspace')->assertUnauthorized();
         $editor = $this->editor();
         $editor->update(['is_active' => false]);
         $this->actingAs($editor)->getJson('/api/planning/workspace')->assertForbidden();
@@ -196,7 +196,7 @@ class PerformancePlanningTest extends TestCase
         $this->actingAs($owner)->getJson($url)->assertOk()
             ->assertJsonPath('plan.status', 'published')->assertJsonCount(2, 'plan.kpas');
         $md = User::factory()->create(['system_role' => 'md', 'is_active' => true]);
-        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertOk()->assertJsonCount(0, 'activities');
+        $this->actingAs($md)->getJson('/api/md/workspace?year=2026')->assertOk()->assertJsonCount(4, 'activities');
     }
 
     public function test_each_weight_group_and_required_kpi_fields_are_validated_independently(): void
@@ -288,5 +288,35 @@ class PerformancePlanningTest extends TestCase
         $this->assertDatabaseCount('performance_plan_versions', 2);
         $draft['owner_id'] = $this->editor()->id;
         $this->putJson('/api/planning/plans/'.$id, $draft)->assertUnprocessable();
+    }
+
+    public function test_non_hof_plan_owner_can_start_work_with_a_reporting_reviewer_and_cannot_self_approve(): void
+    {
+        [$owner, $departments] = $this->hof();
+        DB::table('department_memberships')->where('user_id', $owner->id)->update(['responsibility' => 'employee']);
+        $reviewer = User::factory()->create(['system_role' => 'member', 'is_active' => true]);
+        foreach ($departments as $department) {
+            DB::table('department_memberships')->insert(['user_id' => $reviewer->id, 'department_id' => $department, 'responsibility' => 'manager']);
+            DB::table('reporting_relationships')->insert(['user_id' => $owner->id, 'manager_id' => $reviewer->id, 'department_id' => $department]);
+        }
+        $this->actingAs($this->editor());
+        $id = $this->createPlan($this->payload($owner, $departments));
+        $this->postJson('/api/planning/plans/'.$id.'/publish', ['revision' => 1])->assertOk();
+        $workspace = $this->actingAs($owner)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(4, 'planned_work');
+        $activity = $workspace->json('planned_work.0');
+        $payload = ['plan_id' => $id, 'activity_code' => $activity['activity_code'], 'source_revision' => 2, 'version' => 0, 'reviewer_id' => $reviewer->id];
+        $this->postJson('/api/delivery/personal-plan/start', [...$payload, 'reviewer_id' => $owner->id])->assertUnprocessable();
+        $this->postJson('/api/delivery/personal-plan/start', $payload)->assertOk();
+        $task = $this->getJson('/api/delivery/workspace')->assertJsonCount(3, 'planned_work')->json('tasks.0');
+        $this->assertFalse($task['self_confirm']);
+        $this->assertEquals($reviewer->id, $task['reviewer_id']);
+        $this->postJson('/api/delivery/tasks/'.$task['id'].'/submit', ['version' => 1, 'evidence' => 'Personal plan deliverable completed.'])->assertOk();
+        $submission = DB::table('task_submissions')->where('task_id', $task['id'])->value('id');
+        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertForbidden();
+        $this->actingAs($reviewer)->getJson('/api/delivery/workspace')->assertJsonCount(1, 'reviews');
+        $this->postJson('/api/delivery/submissions/'.$submission.'/review', ['version' => 2, 'decision' => 'approved'])->assertOk();
+        $this->actingAs($owner)->getJson('/api/allocations/people/'.$owner->id.'/2026')->assertJsonPath('live_score.confirmed_completion', 15);
+        $this->postJson('/api/delivery/personal-plan/start', $payload)->assertConflict();
+        $this->actingAs($reviewer)->postJson('/api/delivery/personal-plan/start', $payload)->assertForbidden();
     }
 }

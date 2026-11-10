@@ -39,10 +39,30 @@ class NotificationTest extends TestCase
         }
         $response = $this->actingAs($md)->getJson('/api/notifications')->assertOk()->assertJsonCount(30, 'items')->assertJsonPath('unread', 33);
         $this->getJson('/api/notifications?before='.$response->json('next'))->assertJsonCount(3, 'items')->assertJsonPath('unread', 33)->assertJsonPath('next', null);
+        $this->getJson('/api/notifications?limit=60')->assertJsonCount(33, 'items')->assertJsonPath('next', null);
         $this->postJson('/api/notifications/read-all')->assertOk()->assertJsonPath('unread', 0);
         $this->postJson('/api/planning/plans', [])->assertForbidden();
         $this->getJson('/api/notifications?before=bad')->assertUnprocessable();
         $md->update(['is_active' => false]);
         $this->actingAs($md)->getJson('/api/notifications')->assertForbidden();
+    }
+
+    public function test_archive_filters_and_restore_are_private_and_keep_read_state_separate(): void
+    {
+        $user = User::factory()->create(['system_role' => 'md', 'is_active' => true]);
+        $other = User::factory()->create(['is_active' => true]);
+        NotificationController::send($user->id, 'archive-test', 'approved', 'Completed work', []);
+        NotificationController::send($other->id, 'private', 'assignment', 'Private work', []);
+        $id = DB::table('work_notifications')->where('user_id', $user->id)->value('id');
+        $otherId = DB::table('work_notifications')->where('user_id', $other->id)->value('id');
+        $this->actingAs($user)->postJson('/api/notifications/'.$otherId.'/archive', ['archived' => true])->assertNotFound();
+        $this->postJson('/api/notifications/'.$id.'/archive', ['archived' => true])->assertOk()->assertJsonPath('unread', 0);
+        $this->getJson('/api/notifications')->assertJsonCount(0, 'items');
+        $this->getJson('/api/notifications?view=archived')->assertJsonCount(1, 'items')->assertJsonPath('items.0.read_at', null);
+        $this->postJson('/api/notifications/'.$id.'/archive', ['archived' => false])->assertOk()->assertJsonPath('unread', 1);
+        $this->getJson('/api/notifications?view=unread&category=decisions')->assertJsonCount(1, 'items');
+        $this->getJson('/api/notifications?category=deadlines')->assertJsonCount(0, 'items');
+        $this->getJson('/api/notifications?view=bad')->assertUnprocessable();
+        $this->postJson('/api/notifications/'.$id.'/archive', [])->assertUnprocessable();
     }
 }

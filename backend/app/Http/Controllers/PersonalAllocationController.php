@@ -83,9 +83,10 @@ class PersonalAllocationController extends Controller
             $rows = app(KpiAssignmentController::class)->rowsForPlan($plan);
             foreach (collect($rows)->groupBy('kpa_code') as $group) {
                 $first = $group->first();
-                $active = DB::table('department_memberships as m')->join('departments as d', 'd.id', '=', 'm.department_id')->where('m.user_id', $owner)->where('m.department_id', $first['department_id'])->where('m.responsibility', 'hof')->where('d.is_active', true)->exists();
+                $active = DB::table('department_memberships as m')->join('departments as d', 'd.id', '=', 'm.department_id')->where('m.user_id', $owner)->where('m.department_id', $first['department_id'])->whereIn('m.responsibility', ['hof', 'manager', 'employee'])->where('d.is_active', true)->exists();
                 $progress = $group->sum(fn ($row) => $row['kpi_weight'] * $row['activity_weight'] * (($row['source_changed'] || ! $row['assignee_eligible']) ? 0 : (float) ($row['assignment']->confirmed_progress ?? 0)));
-                $source = $this->source('hof:'.$plan->id.':'.$first['kpa_code'], 'HOF responsibility', $first['kpa_title'], $first['department_id'], $active, json_encode($group->pluck('source_signature')->all()), $progress);
+                $kind = DB::table('department_memberships')->where('user_id', $owner)->where('department_id', $first['department_id'])->where('responsibility', 'hof')->exists() ? 'HOF responsibility' : 'Personal plan responsibility';
+                $source = $this->source('hof:'.$plan->id.':'.$first['kpa_code'], $kind, $first['kpa_title'], $first['department_id'], $active, json_encode($group->pluck('source_signature')->all()), $progress);
                 $source['suggested_weight'] = $first['kpa_weight'];
                 $source['contribution_weight'] = $first['kpa_weight'];
                 $sources[] = $source;

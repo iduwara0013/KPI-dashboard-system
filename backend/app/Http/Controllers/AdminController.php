@@ -7,6 +7,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -18,6 +19,7 @@ class AdminController extends Controller
             'users' => User::orderBy('name')->get(),
             'departments' => DB::table('departments')->orderBy('name')->get()->map(function ($department) {
                 $department->is_active = (bool) $department->is_active;
+
                 return $department;
             }),
             'memberships' => DB::table('department_memberships')->get(),
@@ -44,7 +46,7 @@ class AdminController extends Controller
             'grade' => ['nullable', 'string', 'max:30'],
             'system_role' => ['required', Rule::in(['super_admin', 'md', 'plan_editor', 'member'])],
             'is_active' => ['required', 'boolean'],
-            'password' => [$exists ? 'nullable' : 'required', 'string', 'min:5', 'max:128'],
+            'password' => [$exists ? 'nullable' : 'required', 'string', 'min:6', 'max:128'],
             'memberships' => ['present', 'array', 'max:30'],
             'memberships.*.department_id' => ['required', 'integer', 'distinct', Rule::exists('departments', 'id')->where('is_active', true)],
             'memberships.*.responsibility' => ['sometimes', 'required', Rule::in(['hof', 'manager', 'employee'])],
@@ -84,11 +86,18 @@ class AdminController extends Controller
             unset($membership);
             $this->validateReporting($data, $user?->id);
             $attributes = collect($data)->except(['memberships', 'password'])->all();
+            $revokeSessions = $exists && (! empty($data['password']) || (bool) $user->is_active !== (bool) $data['is_active'] || $user->system_role !== $data['system_role']);
             if (! empty($data['password'])) {
                 $attributes['password'] = $data['password'];
             }
             $saved = $user ?? new User;
+            if ($revokeSessions) {
+                $saved->setRememberToken(Str::random(60));
+            }
             $saved->fill($attributes)->save();
+            if ($revokeSessions && config('session.driver') === 'database') {
+                DB::table(config('session.table', 'sessions'))->where('user_id', $saved->id)->delete();
+            }
 
             DB::table('reporting_relationships')->where('user_id', $saved->id)->delete();
             DB::table('department_memberships')->where('user_id', $saved->id)->delete();
@@ -109,6 +118,7 @@ class AdminController extends Controller
                 }
             }
             $this->record($request, $exists ? 'user.updated' : 'user.created', $saved->name, $before, $this->userState($saved));
+
             return $saved;
         });
 
@@ -323,19 +333,28 @@ class AdminController extends Controller
 
     private function reaches(array $graph, int $node, int $target, array $seen): bool
     {
-        if ($node === $target) return true;
-        if (isset($seen[$node])) return false;
+        if ($node === $target) {
+            return true;
+        }
+        if (isset($seen[$node])) {
+            return false;
+        }
         $seen[$node] = true;
         foreach ($graph[$node] ?? [] as $parent) {
-            if ($this->reaches($graph, (int) $parent, $target, $seen)) return true;
+            if ($this->reaches($graph, (int) $parent, $target, $seen)) {
+                return true;
+            }
         }
+
         return false;
     }
 
     public function saveDepartment(Request $request, ?int $department = null): JsonResponse
     {
         $before = $department ? DB::table('departments')->find($department) : null;
-        if ($department) abort_unless($before, 404);
+        if ($department) {
+            abort_unless($before, 404);
+        }
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120', Rule::unique('departments')->ignore($department)],
             'code' => ['required', 'string', 'max:20', 'regex:/^[A-Z0-9-]+$/', Rule::unique('departments')->ignore($department)],
@@ -356,6 +375,7 @@ class AdminController extends Controller
                 $id = DB::table('departments')->insertGetId([...$data, 'created_at' => now(), 'updated_at' => now()]);
             }
             $this->record($request, $department ? 'department.updated' : 'department.created', $data['name'], $before, $data);
+
             return $id;
         });
 

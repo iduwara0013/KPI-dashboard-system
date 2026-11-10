@@ -1,0 +1,70 @@
+/* Task delivery dialogs share the dashboard's red, navy and mint treatment. */
+.modal.delivery-modal{width:790px;border-radius:18px;border-color:#dfe7f0;box-shadow:0 26px 100px #14253e40}
+.delivery-modal .modal-header{padding:25px 28px;background:linear-gradient(110deg,#fff,#f5f8fc);border-bottom:1px solid #e3ebf4}
+.delivery-modal .modal-header>div{min-width:0}
+.delivery-modal .modal-header h2{display:flex;align-items:center;gap:13px;font-size:23px;line-height:1.4;color:#213c59;letter-spacing:-.6px}
+.delivery-modal .modal-title-icon{display:grid;place-items:center;width:44px;height:44px;flex-shrink:0;border:1px solid #efd9d5;border-radius:12px;background:#fff0ed;color:#b12d25}
+.delivery-modal .modal-header p{font-size:13px;line-height:1.8;margin:9px 0 0 57px;color:#6c83a0;overflow-wrap:anywhere}
+.delivery-modal .modal-header>.icon-button{width:33px;height:33px;flex-shrink:0;border:1px solid #e2e9f1;border-radius:8px;background:#fff;color:#7388a0}
+.delivery-modal .modal-body{padding:25px 28px}
+.delivery-modal .field{font-size:13px;color:#405b79;margin-bottom:21px;gap:9px}
+.delivery-modal .field input,.delivery-modal .field select,.delivery-modal .field textarea{font-size:14px;line-height:1.8;padding:12px 14px;border-color:#dce5ef;border-radius:9px;background:#fff;box-shadow:0 1px 3px #142e4b03}
+.delivery-modal .field input::placeholder,.delivery-modal .field textarea::placeholder{font-size:12px;color:#91a3b8}
+.delivery-modal .field small{font-size:11px;color:#7a8fa6;line-height:1.8;font-weight:400}
+.delivery-modal .field input:focus,.delivery-modal .field textarea:focus,.delivery-modal .field select:focus{border-color:#c77c73;outline:3px solid #be302611}
+.delivery-modal .modal-footer{align-items:center;gap:10px;padding:18px 28px;background:#f8fafd;border-color:#e1e9f3;border-radius:0 0 18px 18px}
+.delivery-modal .modal-footer>.btn{font-size:13px;min-height:44px;border-radius:9px;padding:11px 18px;white-space:normal;line-height:1.6}
+.delivery-modal .delivery-footer-note{display:flex;align-items:center;gap:7px;margin-right:auto;max-width:230px;font-size:11px;line-height:1.7;color:#7a8da5}
+.delivery-modal .delivery-footer-note>svg{flex-shrink:0;color:#6a8d80}
+.delivery-modal .delivery-action-context{display:grid;grid-template-columns:1.5fr 1fr;gap:12px;margin-bottom:23px}
+.delivery-modal .delivery-action-context>span{display:flex;align-items:center;gap:10px;padding:13px 15px;border:1px solid #e1e9f2;border-radius:10px;background:#f7fafd;min-width:0}
+.delivery-modal .delivery-action-context>span>svg{flex-shrink:0;color:#738caa}
+.delivery-modal .delivery-action-context small{display:block;font-size:9px;line-height:1.8;font-weight:650;letter-spacing:.8px;color:#7c91a9}
+.delivery-modal .delivery-action-context strong{display:block;font-size:13px;color:#355573;font-weight:650;line-height:1.8;overflow-wrap:anywhere}
+.delivery-modal .delivery-action-context>span:last-child strong{color:#a8352c}
+.delivery-modal .delivery-progress-picker,.delivery-modal .delivery-allocation-banner{padding:21px 23px;border:1px solid #29455e;border-radius:13px;background:linear-gradient(120deg,#233e58,#142a40);color:#fff;margin-bottom:23px}
+.delivery-modal .delivery-picker-heading,.delivery-modal .delivery-allocation-top{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:10px;letter-spacing:.8px;color:#bed0e3;font-weight:650;line-height:1.7}
+.delivery-modal .delivery-picker-heading>span:first-child,.delivery-modal .delivery-allocation-top>span:first-child{display:flex;align-items:center;gap:7px}
+.delivery-modal .delivery-picker-heading>span:last-child,.delivery-modal .delivery-allocation-top>span:last-child{letter-spacing:0;font-size:11px;color:#b2cbdc;background:#ffffff0a;border:1px solid #ffffff1c;border-radius:6px;padding:4px 9px;font-weight:400;white-space:nowrap}
+.delivery-modal .delivery-picker-value,.delivery-modal .delivery-allocation-value{display:flex;align-items:baseline;gap:13px;margin:10px 0}
+.delivery-modal .delivery-picker-value>strong,.delivery-modal .delivery-allocation-value>strong{font-size:40px;line-height:1.4;letter-spacing:-1.4px;color:#fff;font-variant-numeric:tabular-nums}
+.delivery-modal .delivery-picker-value>strong>span,.delivery-modal .delivery-allocation-value>strong>span{font-size:23px;margin-left:3px;font-weight:400;color:#b5cce0}
+.delivery-modal .delivery-picker-value>span,.delivery-modal .delivery-allocation-value>span{font-size:12px;color:#aec5db}
+.delivery-modal .delivery-progress-picker input[type=range]{width:100%;height:6px;display:block;margin:15px 0 21px;accent-color:#83ccb0;cursor:pointer}
+.delivery-modal .delivery-progress-picker input[type=range]:focus-visible{outline:2px solid #b7d9f5;outline-offset:5px}
+.delivery-modal .delivery-progress-presets{display:flex;gap:8px;justify-content:space-between}
+.delivery-modal .delivery-progress-presets>button{flex:1;background:#ffffff08;border:1px solid #ffffff25;border-radius:6px;padding:7px 5px;color:#c9daeb;font-size:11px;min-height:34px;cursor:pointer}
+.delivery-modal .delivery-progress-presets>button[aria-pressed=true]{background:#c2eadb;border-color:#c2eadb;color:#194a3d;font-weight:700}
+.delivery-modal .delivery-progress-presets>button:hover{border-color:#a5cbbd}
+.delivery-modal .delivery-submit-steps{display:flex;align-items:center;gap:12px;margin:0 0 23px;padding-bottom:19px;border-bottom:1px solid #e8eef4;color:#8195ac;font-size:12px;line-height:1.6}
+.delivery-modal .delivery-submit-steps>span{display:flex;align-items:center;gap:8px}
+.delivery-modal .delivery-submit-steps>span>span{display:grid;place-items:center;flex-shrink:0;width:24px;height:24px;border-radius:50%;background:#edf3f9;color:#768da7;font-size:11px;font-weight:700}
+.delivery-modal .delivery-submit-steps>.is-current{color:#a9362e;font-weight:650}
+.delivery-modal .delivery-submit-steps>.is-current>span{background:#fff0ed;color:#b63c32;border:1px solid #efd4cf}
+.delivery-modal .delivery-evidence-link{border:1px solid #e3eaf2;border-radius:11px;background:#f9fbfd;padding:16px 18px;margin:0 0 20px}
+.delivery-modal .delivery-link-heading{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:#476787;margin-bottom:12px}
+.delivery-modal .delivery-evidence-link .field{margin:0}
+.delivery-modal .delivery-dialog-guidance{padding:15px 17px;border:1px solid #deebe5;border-radius:10px;background:#f4faf7;color:#607e71;font-size:12px;line-height:1.9;margin-top:18px;gap:10px}
+.delivery-modal .delivery-dialog-guidance>svg{flex-shrink:0;color:#4c8a70;margin-top:3px}
+.delivery-modal .delivery-dialog-guidance strong{display:block;color:#42705b;font-size:12px;margin-bottom:3px}
+.delivery-modal .delivery-allocation-track{height:7px;background:#ffffff1a;border-radius:5px;overflow:hidden;margin-top:12px}
+.delivery-modal .delivery-allocation-track>span{height:100%;display:block;border-radius:5px;background:#d9b26a}
+.delivery-modal .delivery-allocation-banner.is-balanced .delivery-allocation-track>span{background:#80c9ad}
+.delivery-modal .delivery-allocation-banner.is-overallocated .delivery-allocation-track>span{background:#e59489}
+.delivery-modal .delivery-allocation-banner p{font-size:12px;line-height:1.8;color:#d0b98b;display:flex;align-items:center;gap:7px;margin:12px 0 0}
+.delivery-modal .delivery-allocation-banner.is-balanced p{color:#a2d4bf}
+.delivery-modal .delivery-allocation-banner.is-overallocated p{color:#efb0a5}
+.delivery-modal .delivery-breakdown>.empty{border:1px dashed #dbe5f0;border-radius:12px;background:#fafcfe;padding:26px 20px;margin-top:23px}
+.delivery-modal .delivery-breakdown>.empty>svg{color:#829db9;background:#edf3fa;box-sizing:content-box;padding:12px;border-radius:14px;width:25px;height:25px}
+.delivery-modal .delivery-breakdown>.empty h3{font-size:17px;color:#3c5a79;margin-top:13px}
+.delivery-modal .delivery-breakdown>.empty p{font-size:12px;line-height:1.9;max-width:440px}
+.delivery-modal .delivery-fieldset{margin-top:20px}
+.delivery-modal .delivery-fieldset>.btn{width:100%;min-height:44px;font-size:13px;border-style:dashed;background:#fafcfe;border-color:#cbd9e8;border-radius:9px}
+.delivery-modal .delivery-task-editor{background:#fafcfe;border:1px solid #dee7f1;border-left:3px solid #6e91b6;padding:19px;border-radius:12px;margin-bottom:17px}
+.delivery-modal .delivery-task-editor>div:first-child{font-size:10px;color:#6e89a6;letter-spacing:.8px;margin-bottom:17px;gap:10px}
+.delivery-modal .delivery-task-editor>div:first-child>span{display:flex;align-items:center;gap:7px}
+.delivery-modal .delivery-editor-weight{margin-left:auto;font-size:11px;letter-spacing:0;font-weight:650;background:#edf3fa;border:1px solid #dee8f3;color:#547697;padding:5px 9px;border-radius:6px}
+.delivery-modal .delivery-task-editor .form-grid{gap:0 17px}
+.delivery-modal .delivery-task-editor .icon-button{flex-shrink:0}
+@media(max-width:650px){.delivery-modal .modal-header{padding:20px}.delivery-modal .modal-header h2{font-size:20px;gap:10px}.delivery-modal .modal-title-icon{width:36px;height:36px;border-radius:10px}.delivery-modal .modal-header p{margin-left:46px;font-size:12px}.delivery-modal .modal-header{gap:12px}.delivery-modal .modal-body{padding:20px}.delivery-modal .modal-footer{padding:15px 20px;flex-wrap:wrap}.delivery-modal .delivery-footer-note{width:100%;max-width:none;margin-right:0}.delivery-modal .modal-footer>.btn{flex:1;font-size:12px;padding:10px}.delivery-modal .delivery-action-context{grid-template-columns:1fr;gap:9px}.delivery-modal .delivery-action-context>span{padding:11px 13px}.delivery-modal .delivery-picker-heading,.delivery-modal .delivery-allocation-top{flex-wrap:wrap;gap:8px}.delivery-modal .delivery-progress-picker,.delivery-modal .delivery-allocation-banner{padding:18px}.delivery-modal .delivery-submit-steps{font-size:11px;gap:7px}.delivery-modal .delivery-evidence-link{padding:14px}.delivery-modal .delivery-dialog-guidance{font-size:11px;padding:14px}.delivery-modal .delivery-task-editor{padding:15px}.delivery-modal .delivery-breakdown .form-grid{grid-template-columns:1fr}}
+
