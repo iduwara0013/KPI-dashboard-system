@@ -9,8 +9,8 @@
   justify-content: space-between;
   gap: 16px;
   padding: 16px clamp(16px, 3vw, 48px);
-  background: #fff;
-  border-bottom: 2px solid #c5120c;
+  background:var(--theme-surface,#fff);
+  border-bottom:2px solid #c5120c;
 }
 
 .monthly-kpi-header > div,
@@ -49,7 +49,7 @@
 }
 
 .monthly-kpi-summary svg {
-  color: #b51610;
+  color:var(--theme-red,#b51610);
 }
 
 .monthly-kpi-summary strong {
@@ -61,7 +61,7 @@
 .monthly-kpi-table small,
 .monthly-kpi-submission small {
   display: block;
-  color: #596a82;
+  color:var(--theme-muted,#596a82);
   margin-top: 4px;
   font-size: 12px;
 }
@@ -74,17 +74,17 @@
   font-size: 13px;
 }
 
-.monthly-kpi .badge-blue { background: #e9f2ff; color: #234d88; }
-.monthly-kpi .badge-amber { background: #fff1da; color: #754700; }
-.monthly-kpi .badge-green { background: #e1f4ea; color: #21623e; }
-.kpi-gap-positive { color: #21623e; }
-.kpi-gap-negative { color: #9e281f; }
+.monthly-kpi .badge-blue { background:var(--theme-raised,#e9f2ff); color:var(--theme-ink,#234d88); }
+.monthly-kpi .badge-amber { background:var(--theme-raised,#fff1da); color:var(--theme-amber,#754700); }
+.monthly-kpi .badge-green { background:var(--theme-raised,#e1f4ea); color:var(--theme-green,#21623e); }
+.kpi-gap-positive { color:var(--theme-green,#21623e); }
+.kpi-gap-negative { color:var(--theme-red,#9e281f); }
 
 .monthly-kpi-notice,
 .monthly-kpi-note {
-  background: #edf2f8;
+  background:var(--theme-raised,#edf2f8);
   border-radius: 8px;
-  color: #294663;
+  color:var(--theme-ink,#294663);
   padding: 12px 16px;
   margin-bottom: 16px;
 }
@@ -95,7 +95,7 @@
 }
 
 .monthly-kpi-submission {
-  border: 1px solid #dce4ed;
+  border:1px solid var(--theme-line,#dce4ed);
   border-radius: 8px;
   padding: 12px 16px;
   overflow-wrap: anywhere;
@@ -117,7 +117,7 @@
 }
 
 .monthly-kpi-submission a {
-  color: #244b7a;
+  color:var(--theme-ink,#244b7a);
   text-decoration: underline;
 }
 
@@ -132,7 +132,7 @@
 }
 
 .monthly-kpi.workspace-embedded{min-height:0;padding:0}
-.workspace-embedded.monthly-kpi>div>.page-heading{padding:24px 26px;border:1px solid #e0e8f2;border-left:4px solid #c81712;border-radius:14px;background:linear-gradient(110deg,#fff,#f7f9fc)}
-.workspace-embedded.monthly-kpi .monthly-kpi-toolbar{background:#fff;border:1px solid #e0e8f1;border-radius:12px;padding:18px 20px}
-.workspace-embedded.monthly-kpi .monthly-kpi-summary>.panel{border-radius:12px;border-color:#dfe7f0;box-shadow:0 4px 18px #243b5305}
+.workspace-embedded.monthly-kpi>div>.page-heading{padding:24px 26px;border:1px solid var(--theme-line,#e0e8f2);border-left:4px solid #c81712;border-radius:14px;background:linear-gradient(110deg,var(--theme-surface,#fff),var(--theme-surface,#f7f9fc))}
+.workspace-embedded.monthly-kpi .monthly-kpi-toolbar{background:var(--theme-surface,#fff);border:1px solid var(--theme-line,#e0e8f1);border-radius:12px;padding:18px 20px}
+.workspace-embedded.monthly-kpi .monthly-kpi-summary>.panel{border-radius:12px;border-color:var(--theme-line,#dfe7f0);box-shadow:0 4px 18px #243b5305}
 @media(max-width:650px){.workspace-embedded.monthly-kpi>div>.page-heading{padding:20px}.workspace-embedded.monthly-kpi .monthly-kpi-toolbar{padding:15px}}

@@ -115,6 +115,10 @@ test('office workflow: weighted delegation, changes, approval, exact notificatio
   await employee.page.getByRole('button', { name: 'Discard edits', exact: true }).click();
   await expect(employee.page.getByRole('dialog', { name: 'Evidence & review history' })).toBeVisible();
   await employee.page.getByRole('button', { name: 'Close', exact: true }).click();
+  await employee.page.getByRole('button', { name: 'Switch to dark mode' }).click();
+  await expect(employee.page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await employee.page.screenshot({ path: 'test-results/delivery-dark.png' });
+  await employee.page.getByRole('button', { name: 'Switch to light mode' }).click();
   const mdActor = await actor(browser, 'md.browser@example.test', true);
   const mdNavigation = mdActor.page.getByRole('navigation', { name: 'MD dashboard', exact: true });
   await expect(mdNavigation.getByRole('link', { name: /^Executive overview/ })).toHaveAttribute('aria-current', 'page');
@@ -126,6 +130,10 @@ test('office workflow: weighted delegation, changes, approval, exact notificatio
   await expect(mdNavigation.getByRole('link', { name: /^Monthly KPI Results/ })).toHaveAttribute('href', '/kpi-results');
   await expect(mdNavigation.getByRole('link', { name: /^TV display/ })).toHaveAttribute('target', '_blank');
   await mdActor.page.locator('.executive-sidebar').screenshot({ path: 'test-results/md-sidebar-desktop.png' });
+  await mdActor.page.getByRole('button', { name: 'Switch to dark mode' }).click();
+  await expect(mdActor.page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await mdActor.page.screenshot({ path: 'test-results/md-dark.png' });
+  await mdActor.page.getByRole('button', { name: 'Switch to light mode' }).click();
   await mdActor.page.setViewportSize({ width: 1366, height: 768 });
   await expect(mdActor.page.getByRole('button', { name: 'Sign out' })).toBeInViewport();
   await mdActor.page.locator('.executive-sidebar').screenshot({ path: 'test-results/md-sidebar-laptop.png' });

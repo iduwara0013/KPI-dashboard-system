@@ -1,0 +1,51 @@
+:root { color-scheme: light; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #0b1728;
+  --surface: #14243a;
+  --ink: #e0eaf6;
+  --muted: #9bafc7;
+  --line: #2b3e55;
+  --white: #14243a;
+  --mint: #39272c;
+  --theme-surface: #14243a;
+  --theme-raised: #192c43;
+  --theme-soft: #21344c;
+  --theme-line: #2d4058;
+  --theme-ink: #e0eaf6;
+  --theme-muted: #a3b5ca;
+  --theme-subtle: #8ea4be;
+  --theme-red: #ff9d91;
+  --theme-amber: #e7bd7a;
+  --theme-green: #82cdb1;
+  --theme-purple: #bdaceb;
+  --theme-red-bg: #39272e;
+  --theme-amber-bg: #342e25;
+  --theme-green-bg: #183c37;
+  --theme-purple-bg: #302c46;
+}
+.theme-toggle { position: fixed; right: 22px; bottom: 18px; z-index: 70; display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 7px 13px 7px 8px; border: 1px solid var(--line, #e3e8f0); border-radius: 30px; background: var(--surface, #fff); color: var(--ink, #20334e); box-shadow: 0 4px 20px #07152918; font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
+.theme-toggle-symbol { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--theme-raised, #f1f4f8); color: var(--theme-amber, #607b9a); }
+.theme-toggle:hover { border-color: var(--theme-subtle, #a4b2c2); }
+.theme-toggle:focus-visible { outline: 3px solid #be5b50; outline-offset: 3px; }
+body:has([role="dialog"][aria-modal="true"]) .theme-toggle { visibility: hidden; }
+html[data-theme="dark"] { background: var(--canvas); }
+html[data-theme="dark"] body { background: var(--canvas); color: var(--ink); }
+html[data-theme="dark"] :is(input, select, textarea) { color-scheme: dark; }
+html[data-theme="dark"] input::placeholder, html[data-theme="dark"] textarea::placeholder { color: #8299b3; }
+html[data-theme="dark"] input:-webkit-autofill { -webkit-text-fill-color: #e0eaf6; -webkit-box-shadow: 0 0 0 1000px #1d3049 inset; caret-color: #fff; }
+html[data-theme="dark"] svg text { fill: #b4c5da; }
+html[data-theme="dark"] .org-chart-canvas { background-color: var(--canvas); }
+html[data-theme="dark"] .access-page { background: var(--canvas); }
+html[data-theme="dark"] .access-input input { color: var(--ink); }
+html[data-theme="dark"] .access-input { background: #102034; }
+html[data-theme="dark"] .access-panel h2 { color: #edf3fa; }
+html[data-theme="dark"] .access-story h1 { color: #fff; }
+html[data-theme="dark"] .access-story h1 > span { color: #f59988; }
+html[data-theme="dark"] .access-submit, html[data-theme="dark"] .btn-primary { color: #fff; }
+body:has(.tv-display) .theme-toggle { opacity: 0; transition: opacity .2s; }
+body:has(.tv-display .tv-controls-dock.is-visible) .theme-toggle { opacity: 1; bottom: 100px; }
+body:has(.tv-display) .theme-toggle:is(:hover, :focus-visible) { opacity: 1; }
+@media (max-width: 600px) { .theme-toggle { right: 14px; bottom: 12px; min-height: 40px; padding-right: 11px; font-size: 10px; } }
+@media print { .theme-toggle { display: none; } }
+@media (prefers-reduced-motion: reduce) { .theme-toggle { transition: none !important; } }
