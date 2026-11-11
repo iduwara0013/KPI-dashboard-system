@@ -2,7 +2,7 @@ const pages = {
   admin: ['overview', 'people', 'departments', 'reporting', 'access', 'activity'],
   planning: ['overview', 'plans', 'history', 'allocations', 'results'],
   md: ['overview', 'departments', 'hofs', 'work'],
-  hof: ['overview', 'breakdown', 'activities', 'own', 'delegated', 'team', 'personal', 'results'],
+  hof: ['overview', 'breakdown', 'activities', 'own', 'delegated', 'team', 'reviews', 'personal', 'results'],
   delivery: ['overview', 'activities', 'kpis', 'tasks', 'reviews', 'team', 'personal', 'results'],
 };
 
@@ -21,6 +21,7 @@ export function resolveWorkspace(pathname, user) {
   const member = role === 'member';
   const hof = member && user.workspaces?.includes('hof');
   const delivery = member && user.workspaces?.some(role => ['hof', 'manager', 'employee'].includes(role));
+  if (path === '/delivery/reviews' && hof) return { workspace: 'hof', page: 'reviews' };
   const home = { super_admin: 'admin', plan_editor: 'planning', md: 'md' }[role]
     ?? (hof ? 'hof' : 'delivery');
   const access = {

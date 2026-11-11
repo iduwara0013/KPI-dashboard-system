@@ -21,7 +21,7 @@ test('the home URL still opens the workspace assigned to each role', () => {
 
 test('direct links restore the selected page and enforce workspace access', () => {
   assert.deepEqual(resolveWorkspace('/hof/team', hof), { workspace: 'hof', page: 'team' });
-  assert.deepEqual(resolveWorkspace('/delivery/reviews', hof), { workspace: 'delivery', page: 'reviews' });
+  assert.deepEqual(resolveWorkspace('/delivery/reviews', hof), { workspace: 'hof', page: 'reviews' });
   assert.deepEqual(resolveWorkspace('/delivery/kpis', employee), { workspace: 'delivery', page: 'kpis' });
   assert.deepEqual(resolveWorkspace('/delivery/activities', employee), { workspace: 'delivery', page: 'activities' });
   assert.deepEqual(resolveWorkspace('/admin/people', hof), { error: 'forbidden' });
@@ -61,4 +61,11 @@ test('planning navigation keeps history, allocations and results within authoriz
   }
   assert.deepEqual(resolveWorkspace('/planning/allocations', { ...employee, can_view_plans: true }), { error: 'forbidden' });
   assert.deepEqual(resolveWorkspace('/planning/results', employee), { error: 'forbidden' });
+});
+
+test('HOF reviews keep the HOF workspace while manager reviews keep delivery navigation', () => {
+  assert.deepEqual(resolveWorkspace('/hof/reviews', hof), { workspace: 'hof', page: 'reviews' });
+  assert.deepEqual(resolveWorkspace('/delivery/reviews', hof), { workspace: 'hof', page: 'reviews' });
+  assert.deepEqual(resolveWorkspace('/delivery/reviews', { system_role: 'member', workspaces: ['manager'] }), { workspace: 'delivery', page: 'reviews' });
+  assert.deepEqual(resolveWorkspace('/hof/reviews', employee), { error: 'forbidden' });
 });

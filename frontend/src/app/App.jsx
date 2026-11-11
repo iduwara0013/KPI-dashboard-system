@@ -21,7 +21,7 @@ import MdWorkspace from '../features/md/MdWorkspace.jsx';
 import MonthlyKpiWorkspace from '../features/kpi/MonthlyKpiWorkspace.jsx';
 import NotificationCenter from '../features/notifications/NotificationCenter.jsx';
 import TvDisplay from '../features/display/TvDisplay.jsx';
-import { defaultDeliveryPage, resolveWorkspace, workspacePath } from './workspaceRoutes.js';
+import { resolveWorkspace, workspacePath } from './workspaceRoutes.js';
 
 const roles = { super_admin: 'System admin', md: 'MD / executive viewer', plan_editor: 'Plan editor', member: 'Team member' };
 const responsibilities = { hof: 'Head of function', manager: 'Manager', employee: 'Employee' };
@@ -83,7 +83,7 @@ export default function App() {
   }
   function openNotification(target) {
     const resultsRoute = resolveWorkspace('/kpi-results', session);
-    const next = target.workspace === 'results' ? (resultsRoute.page ? workspacePath(resultsRoute.workspace, resultsRoute.page) : '/kpi-results') : target.workspace === 'md'
+    const next = target.workspace === 'delivery' && target.page === 'reviews' && session.workspaces?.includes('hof') ? '/hof/reviews' : target.workspace === 'results' ? (resultsRoute.page ? workspacePath(resultsRoute.workspace, resultsRoute.page) : '/kpi-results') : target.workspace === 'md'
       ? workspacePath('md', 'work')
       : workspacePath('delivery', target.page === 'activities' && !session.workspaces?.includes('manager') ? 'tasks' : target.page);
     if (resolveWorkspace(next, session).error) return;
@@ -128,7 +128,7 @@ export default function App() {
     const onWork = session.system_role === 'member' ? () => window.location.assign('/') : undefined;
     workspace = <PlanWorkspace key={historyVisit} {...props} notificationTarget={notificationTarget} onWork={onWork} />;
   } else if (route.workspace === 'hof') {
-    workspace = <HofWorkspace key={historyVisit} {...props} notificationTarget={notificationTarget} onDelivery={() => requestNavigation(() => { setNotificationTarget(null); navigate(workspacePath('delivery', defaultDeliveryPage(session))); })} />;
+    workspace = <HofWorkspace key={historyVisit} {...props} notificationTarget={notificationTarget} />;
   } else if (route.workspace === 'delivery') {
     const onHof = session.workspaces?.includes('hof') ? () => requestNavigation(() => { setNotificationTarget(null); navigate('/hof/overview'); }) : null;
     workspace = <DeliveryWorkspace key={historyVisit} {...props} notificationTarget={notificationTarget} onHof={onHof} />;
