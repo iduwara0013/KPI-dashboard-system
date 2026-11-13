@@ -7,7 +7,8 @@ test('login redesign: responsive layout, password visibility and real sign in', 
     await expect(page.getByRole('heading', { name: 'Welcome back.' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (viewport.width > 760) {
-      expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1)).toBe(true);
+      const height = await page.evaluate(() => ({ content: document.documentElement.scrollHeight, viewport: window.innerHeight }));
+      expect(height.content <= height.viewport + 1, JSON.stringify(height)).toBe(true);
       const button = await page.getByRole('button', { name: 'Sign in', exact: true }).boundingBox();
       expect(button.y + button.height).toBeLessThanOrEqual(viewport.height);
     }

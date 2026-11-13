@@ -1,4 +1,5 @@
 :root { color-scheme: light; }
+.sidebar:not(.executive-sidebar) { overflow-y: auto; scrollbar-width: thin; scrollbar-color: #40556e transparent; }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --canvas: #0b1728;
@@ -24,7 +25,7 @@
   --theme-green-bg: #183c37;
   --theme-purple-bg: #302c46;
 }
-.theme-toggle { position: fixed; right: 22px; bottom: 18px; z-index: 70; display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 7px 13px 7px 8px; border: 1px solid var(--line, #e3e8f0); border-radius: 30px; background: var(--surface, #fff); color: var(--ink, #20334e); box-shadow: 0 4px 20px #07152918; font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer; }
+.theme-toggle { position: fixed; right: 22px; bottom: 18px; z-index: 70; display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 7px 13px 7px 8px; border: 1px solid var(--line, #e3e8f0); border-radius: 30px; background: var(--surface, #fff); color: var(--ink, #20334e); box-shadow: 0 4px 20px #07152918; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .theme-toggle-symbol { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--theme-raised, #f1f4f8); color: var(--theme-amber, #607b9a); }
 .theme-toggle:hover { border-color: var(--theme-subtle, #a4b2c2); }
 .theme-toggle:focus-visible { outline: 3px solid #be5b50; outline-offset: 3px; }
@@ -46,6 +47,6 @@ html[data-theme="dark"] .access-submit, html[data-theme="dark"] .btn-primary { c
 body:has(.tv-display) .theme-toggle { opacity: 0; transition: opacity .2s; }
 body:has(.tv-display .tv-controls-dock.is-visible) .theme-toggle { opacity: 1; bottom: 100px; }
 body:has(.tv-display) .theme-toggle:is(:hover, :focus-visible) { opacity: 1; }
-@media (max-width: 600px) { .theme-toggle { right: 14px; bottom: 12px; min-height: 40px; padding-right: 11px; font-size: 10px; } }
+@media (max-width: 600px) { .theme-toggle { right: 14px; bottom: 12px; min-height: 40px; padding-right: 11px; font-size: 12px; } }
 @media print { .theme-toggle { display: none; } }
 @media (prefers-reduced-motion: reduce) { .theme-toggle { transition: none !important; } }

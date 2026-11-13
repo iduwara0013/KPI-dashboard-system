@@ -63,7 +63,7 @@
   display: block;
   color:var(--theme-muted,#596a82);
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .monthly-kpi-table {
@@ -71,7 +71,7 @@
 }
 
 .monthly-kpi-table td {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .monthly-kpi .badge-blue { background:var(--theme-raised,#e9f2ff); color:var(--theme-ink,#234d88); }
