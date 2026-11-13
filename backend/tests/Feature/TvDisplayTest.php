@@ -40,6 +40,7 @@ class TvDisplayTest extends TestCase
         $manager = User::where('employee_number', 'EMP004')->firstOrFail();
         $employee = User::where('employee_number', 'EMP007')->firstOrFail();
         $editor = User::where('employee_number', 'EMP011')->firstOrFail();
+        $this->grantPlanningDepartments($editor);
         $department = (int) DB::table('departments')->where('code', 'IT')->value('id');
         $peer = User::factory()->create(['system_role' => 'member', 'is_active' => true]);
         $lead = User::factory()->create(['system_role' => 'member', 'is_active' => true]);

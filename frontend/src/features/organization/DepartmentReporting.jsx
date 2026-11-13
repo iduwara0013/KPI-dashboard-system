@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Network, Save } from 'lucide-react';
+import { ArrowLeft, Network, Save } from 'lucide-react';
 import { request } from '../../services/api.js';
 import { Avatar, Empty, ErrorBox, Field } from '../../components/ui.jsx';
 import { ReportingGraph, reportingRoles } from './OrganizationChart.jsx';
+import OverallReporting from './OverallReporting.jsx';
 
 function wouldCreateCycle(links, managerId, userId) {
   const pending = [managerId];
@@ -20,7 +21,7 @@ function wouldCreateCycle(links, managerId, userId) {
 
 export default function DepartmentReporting({ data, onSaved }) {
   const departments = data.departments.filter(department => department.is_active);
-  const [departmentId, setDepartmentId] = useState(() => String(departments[0]?.id || ''));
+  const [departmentId, setDepartmentId] = useState('overall');
   const [selected, setSelected] = useState(null);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
@@ -60,6 +61,14 @@ export default function DepartmentReporting({ data, onSaved }) {
     window.addEventListener('beforeunload', confirmLeave);
     return () => window.removeEventListener('beforeunload', confirmLeave);
   }, [dirty]);
+
+  function chooseDepartment(value) {
+    if (dirty || busy) return;
+    setDepartmentId(value);
+    setSelected(null);
+    setMessage('');
+    setError(null);
+  }
 
   function updatePerson(changes) {
     const next = { managerIds: currentManagers, responsibility: person.responsibility, ...changes };
@@ -105,27 +114,24 @@ export default function DepartmentReporting({ data, onSaved }) {
   return <section className="panel org-chart department-reporting">
     <div className="panel-heading"><div>
       <h2><Network size={19} /> Reporting structure</h2>
-      <p>Choose a department, select a person’s card and choose who they report to.</p>
+      <p>{departmentId === 'overall' ? 'Chairman, Managing Director and departments' : 'Select a person to manage their reporting relationships.'}</p>
     </div></div>
     <ErrorBox error={error} />
     {message && <p className="org-note" role="status">{message}</p>}
     <div className="org-toolbar">
-      <label>Department<select value={departmentId} disabled={dirty || busy} onChange={event => {
-        setDepartmentId(event.target.value);
-        setSelected(null);
-        setMessage('');
-        setError(null);
-      }}>
-        <option value="">Select department</option>
+      <label>Department<select value={departmentId} disabled={dirty || busy} onChange={event => chooseDepartment(event.target.value)}>
+        <option value="overall">Overall · Company structure</option>
         {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
       </select></label>
-      <span>{people.length} people · {links.length} reporting links</span>
+      <span>{departmentId === 'overall' ? `${departments.length} departments` : `${people.length} people · ${links.length} reporting links`}</span>
       {dirty && <div className="reporting-actions">
         <button className="btn btn-secondary" disabled={busy} onClick={() => { setDraft({}); setError(null); }}>Discard changes</button>
         <button className="btn btn-primary" disabled={busy} onClick={save}><Save size={16} /> {busy ? 'Saving…' : 'Save changes'}</button>
       </div>}
     </div>
     {dirty && <p className="org-note" role="status">Unsaved changes for {pending.length} {pending.length === 1 ? 'person' : 'people'}. New lines are dashed. Save or discard to switch departments.</p>}
+    {departmentId === 'overall' ? <OverallReporting data={data} departments={departments} onSelectDepartment={chooseDepartment} /> : <>
+    <button type="button" className="text-button company-back" disabled={dirty || busy} onClick={() => chooseDepartment('overall')}><ArrowLeft size={15} />Overall structure</button>
     {!people.length ? <Empty icon={Network} title={departmentId ? 'No members in this department' : 'Choose an active department'} text="Department assignments are managed from People." /> : <>
       <div className="reporting-editor" ref={editor}>
         <Field label="Find a department member">
@@ -167,6 +173,7 @@ export default function DepartmentReporting({ data, onSaved }) {
       </div>
       <ReportingGraph key={departmentId} people={people} links={links.filter(link => people.some(item => item.id === link.manager_id))} showUnassigned
         selected={selected} onSelect={id => { setSelected(id); editor.current?.scrollIntoView({ block: 'nearest' }); }} />
+    </>}
     </>}
   </section>;
 }

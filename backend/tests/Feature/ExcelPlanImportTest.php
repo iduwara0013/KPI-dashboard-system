@@ -17,6 +17,7 @@ class ExcelPlanImportTest extends TestCase
     {
         [$employee, $department] = $this->employeeInDepartment();
         $editor = User::factory()->create(['system_role' => 'plan_editor', 'is_active' => true]);
+        $this->grantPlanningDepartments($editor);
         $other = User::factory()->create(['system_role' => 'member', 'is_active' => true, 'employee_number' => '11474']);
         $url = '/api/planning/excel-import';
         $scope = ['year' => 2026, 'owner_id' => $employee->id, 'department_id' => $department];
@@ -87,6 +88,7 @@ class ExcelPlanImportTest extends TestCase
     {
         [$employee, $department] = $this->employeeInDepartment();
         $editor = User::factory()->create(['system_role' => 'plan_editor', 'is_active' => true]);
+        $this->grantPlanningDepartments($editor);
         $this->actingAs($editor)->post('/api/planning/excel-import', [
             'workbook' => $this->workbook('0.75'), 'sheet' => 'Individual', 'year' => 2026,
             'owner_id' => $employee->id, 'department_id' => $department,

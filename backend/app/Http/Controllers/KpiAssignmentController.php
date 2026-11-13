@@ -25,6 +25,7 @@ class KpiAssignmentController extends Controller
                 'source_signature' => $signature, 'delegation' => $delegation,
                 'valid' => $delegation && $activeHof && $eligible && $delegation->source_signature === $signature,
                 'confirmed_progress' => round($confirmed, 4),
+                'timeliness' => app(TimelinessController::class)->combine($group->map(fn ($row) => ['weight' => $row['activity_weight'], 'timeliness' => ($row['source_changed'] ?? false) || ! ($row['assignee_eligible'] ?? true) ? null : ($row['timeliness'] ?? null)])->all()),
             ];
         }
 
@@ -42,7 +43,7 @@ class KpiAssignmentController extends Controller
             }
             $eligible = ! $assignment || app(HofWorkController::class)->recipientRole((int) $plan->owner_id, (int) $assignment->assignee_id, $row['department_id']) === $assignment->recipient_role;
 
-            return [...$row, 'assignment' => $assignment, 'source_changed' => $assignment && $assignment->source_signature !== $row['source_signature'], 'assignee_eligible' => $eligible];
+            return [...$row, 'timeliness' => $assignment && app(DeliveryController::class)->context($assignment)['valid'] ? app(TimelinessController::class)->forAssignment($assignment)['summary'] : null, 'assignment' => $assignment, 'source_changed' => $assignment && $assignment->source_signature !== $row['source_signature'], 'assignee_eligible' => $eligible];
         }, app(HofWorkController::class)->activities($plan));
     }
 

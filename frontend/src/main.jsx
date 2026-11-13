@@ -6,5 +6,7 @@ import './styles/styles.css';
 import './styles/premium.css';
 import './styles/workspace-navigation.css';
 import './styles/theme.css';
+import './styles/page-heading.css';
+import './styles/scan-friendly.css';
 
 createRoot(document.getElementById('root')).render(<React.StrictMode><App /><ThemeToggle /></React.StrictMode>);

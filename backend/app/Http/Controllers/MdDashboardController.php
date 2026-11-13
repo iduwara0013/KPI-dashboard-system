@@ -44,10 +44,12 @@ class MdDashboardController extends Controller
                     'department_id' => $row['department_id'], 'kpa' => $row['kpa_title'], 'kpi' => $row['kpi_title'],
                     'activity' => $row['activity'], 'code' => $row['activity_code'], 'weight' => $row['personal_weight'],
                     'assignee' => $assignment ? ($people[$assignment->assignee_id]->name ?? 'Previous owner') : null,
+                    'timeliness' => $valid && $ready ? ($row['timeliness'] ?? null) : null,
                     'approved' => $approved, 'reported' => $assignment ? (float) $assignment->reported_progress : 0,
                     'due_date' => $due, 'overdue' => $approved < 100 && $due && $due < now()->toDateString(),
                     'pending' => $pending, 'needs_review' => (bool) ($assignment && (! $valid || ($tasks->isNotEmpty() && ! $ready))),
                     'tasks' => $tasks->map(fn ($task) => [
+                        'timeliness' => $valid && $ready ? (app(TimelinessController::class)->forAssignment($assignment)['tasks'][$task->id] ?? null) : null,
                         'id' => $task->id, 'parent_task_id' => $task->parent_task_id, 'title' => $task->title,
                         'owner' => $people[$task->assignee_id]->name ?? 'Previous owner',
                         'reviewer' => app(DeliveryController::class)->selfConfirmable($task, $assignment) ? 'HOF confirmation' : ($people[$task->reviewer_id]->name ?? 'Previous reviewer'),

@@ -30,6 +30,7 @@ class MixedAssignmentsTest extends TestCase
         $this->manager = $this->user('EMP004');
         $this->employee = $this->user('EMP007');
         $this->editor = $this->user('EMP011');
+        $this->grantPlanningDepartments($this->editor);
         $department = DB::table('departments')->where('code', 'IT')->value('id');
         $payload = ['code' => 'MIXED-2026', 'title' => 'Mixed responsibility plan', 'year' => 2026, 'owner_id' => $this->hof->id,
             'kpas' => [['code' => 'KPA-IT', 'title' => 'Infrastructure', 'department_id' => $department, 'weight' => 1, 'kpis' => [[

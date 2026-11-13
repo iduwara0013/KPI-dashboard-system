@@ -27,6 +27,7 @@ class HofWorkTest extends TestCase
         $this->seed();
         $this->hof = User::where('employee_number', 'EMP001')->firstOrFail();
         $this->editor = User::where('system_role', 'plan_editor')->firstOrFail();
+        $this->grantPlanningDepartments($this->editor);
         $this->manager = User::where('employee_number', 'EMP004')->firstOrFail();
         $this->department = (int) DB::table('departments')->where('code', 'IT')->value('id');
         $this->actingAs($this->editor);

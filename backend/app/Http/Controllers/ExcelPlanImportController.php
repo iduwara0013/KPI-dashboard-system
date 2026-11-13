@@ -22,6 +22,8 @@ class ExcelPlanImportController extends Controller
         abort_unless(RequirePlanningAccess::canEdit($request->user()), 403);
         $input = $request->validate(['department_id' => ['nullable', 'integer', 'min:1']]);
         if (isset($input['department_id'])) {
+            abort_unless(RequirePlanningAccess::departmentIds($request->user())->contains((int) $input['department_id']), 403);
+
             return response()->json([
                 'employees' => $this->departmentEmployees((int) $input['department_id'])->orderBy('u.name')->orderBy('u.id')
                     ->get()->map(fn (object $person): array => [
@@ -38,7 +40,7 @@ class ExcelPlanImportController extends Controller
 
         return response()->json([
             'years' => [self::YEAR],
-            'departments' => DB::table('departments')->where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'departments' => DB::table('departments')->whereIn('id', RequirePlanningAccess::departmentIds($request->user()))->where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -54,6 +56,7 @@ class ExcelPlanImportController extends Controller
             'save' => ['nullable', 'in:1'],
         ]);
         $departmentId = (int) $input['department_id'];
+        abort_unless(RequirePlanningAccess::departmentIds($request->user())->contains($departmentId), 403);
         $employee = $this->departmentEmployees($departmentId)->where('u.id', $input['owner_id'])->first();
         if (! $employee) {
             $this->invalid('Choose a person assigned to the selected department.');
@@ -115,7 +118,7 @@ class ExcelPlanImportController extends Controller
     {
         return DB::table('users as u')->join('department_memberships as m', 'm.user_id', '=', 'u.id')
             ->join('departments as d', 'd.id', '=', 'm.department_id')
-            ->where('m.department_id', $departmentId)->where('d.is_active', true)
+            ->where('m.department_id', $departmentId)->where('d.is_active', true)->where('u.system_role', 'member')
             ->select('u.id', 'u.name', 'u.employee_number', 'u.designation', 'u.is_active', 'u.system_role',
                 'm.responsibility', 'm.responsibility_title');
     }

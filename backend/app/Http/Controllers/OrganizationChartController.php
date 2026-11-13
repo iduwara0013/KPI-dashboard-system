@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\RequirePlanningAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,9 @@ class OrganizationChartController extends Controller
         $nodes = collect();
         $edges = collect();
         foreach ($members->groupBy('department_id') as $department => $group) {
+            if ($user->system_role === 'plan_editor' && ! RequirePlanningAccess::departmentIds($user)->contains((int) $department)) {
+                continue;
+            }
             if (! $all && ! $group->contains('id', $user->id)) {
                 continue;
             }

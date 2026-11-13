@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveWorkspace } from './workspaceRoutes.js';
+import { extraWorkPath, resolveWorkspace } from './workspaceRoutes.js';
 
 const hof = { system_role: 'member', workspaces: ['hof'] };
 const employee = { system_role: 'member', workspaces: ['employee'] };
+
+test('extra-work links keep each role in its authorized workspace', () => {
+  for (const [user, area] of [[hof, 'hof'], [employee, 'delivery'], [{ system_role: 'md' }, 'md'], [{ system_role: 'plan_editor' }, 'planning']]) {
+    assert.equal(extraWorkPath(user), `/${area}/extra`);
+    assert.deepEqual(resolveWorkspace(extraWorkPath(user), user), { workspace: area, page: 'extra' });
+  }
+  assert.deepEqual(resolveWorkspace('/planning/extra', { ...employee, can_view_plans: true }), { error: 'forbidden' });
+});
 
 test('the home URL still opens the workspace assigned to each role', () => {
   const accounts = [

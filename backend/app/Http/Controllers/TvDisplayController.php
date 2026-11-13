@@ -29,7 +29,7 @@ class TvDisplayController extends Controller
         $managerIds = array_values(array_intersect($ids, $memberships->where('responsibility', 'manager')->pluck('department_id')->all()));
         $rows = collect(app(MdDashboardController::class)->activities($year, $md ? null : $user->id))
             ->filter(fn ($row) => in_array($row['department_id'], $md ? $ids : $hofIds))
-            ->map(fn ($row) => collect($row)->only(['key', 'department_id', 'kpa', 'kpi', 'activity', 'weight', 'approved', 'reported', 'due_date', 'overdue', 'pending', 'needs_review'])->all() + ['assigned' => $row['assignee'] !== null])->values();
+            ->map(fn ($row) => collect($row)->only(['key', 'department_id', 'kpa', 'kpi', 'activity', 'weight', 'timeliness', 'approved', 'reported', 'due_date', 'overdue', 'pending', 'needs_review'])->all() + ['assigned' => $row['assignee'] !== null])->values();
         $managerAssignments = $this->managerAssignments($user->id, $managerIds);
         $managerWork = $this->managerWork($user->id, $managerAssignments->where('year', $year));
         $rows = $rows->merge($managerWork['rows'])->filter(fn ($row) => ! isset($data['department']) || $row['department_id'] === (int) $data['department'])->values();
@@ -138,6 +138,7 @@ class TvDisplayController extends Controller
                     'department_id' => (int) $assignment->department_id, 'kpa' => $activity['kpa_title'],
                     'kpi' => $activity['kpi_title'], 'activity' => $branch?->title ?? $activity['activity'],
                     'weight' => $weight, 'approved' => $confirmed,
+                    'timeliness' => $context['valid'] && $ready ? ($branch ? (app(TimelinessController::class)->forAssignment($assignment)['tasks'][$branch->id] ?? null) : app(TimelinessController::class)->forAssignment($assignment)['summary']) : null,
                     'reported' => (float) ($branch?->reported_progress ?? $assignment->reported_progress),
                     'due_date' => $due, 'overdue' => $confirmed < 100 && $due && $due < now('Asia/Colombo')->toDateString(),
                     'pending' => $context['valid'] && $ready ? $scoped->where('status', 'submitted')->count() : 0,

@@ -1,0 +1,13 @@
+.timeliness { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 12px 14px; margin: 12px 0; border: 1px solid var(--theme-line, #dfe7ef); border-radius: 9px; background: var(--theme-surface, #fff); color: var(--theme-ink, #263f5d); }
+.timeliness-label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.timeliness > strong { font-size: 25px; font-weight: 750; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.timeliness > small { font-size: 11px; color: var(--theme-muted, #6a7c94); }
+.timeliness-late > strong { color: var(--theme-amber, #a36b18); }
+.timeliness-detail { flex-basis: 100%; font-size: 11px; line-height: 1.6; color: var(--theme-muted, #6a7c94); }
+.timeliness-compact { padding: 7px 10px; margin: 7px 0; gap: 5px 8px; }
+.timeliness-compact > strong { font-size: 19px; }
+.task-card-score .timeliness { background: var(--theme-surface, #fff); }
+.deadline-preview-action { display: flex; align-items: center; gap: 8px; }
+.deadline-preview-action > button:first-child { flex: 1; min-width: 0; }
+.deadline-preview-action > button:last-child { flex-shrink: 0; }
+@media(max-width:650px) { .deadline-preview-action { flex-wrap: wrap; } }

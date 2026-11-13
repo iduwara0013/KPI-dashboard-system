@@ -117,7 +117,12 @@ class NotificationController extends Controller
         $available = ! empty($target['workspace']);
         $required = false;
         $state = 'Information';
-        if (! empty($target['task_id'])) {
+        if (($target['workspace'] ?? '') === 'extra' && ! empty($target['extra_task_id'])) {
+            $extra = app(ExtraWorkController::class)->notificationState((int) $target['extra_task_id'], (int) $row->user_id, ($target['page'] ?? '') === 'reviews', isset($target['extra_submission_id']) ? (int) $target['extra_submission_id'] : null);
+            $available = $extra['available'];
+            $required = $extra['required'];
+            $state = $extra['state'];
+        } elseif (! empty($target['task_id'])) {
             $id = (int) $target['task_id'];
             if (! array_key_exists($id, $this->taskStates)) {
                 $task = DB::table('delivery_tasks')->find($id);

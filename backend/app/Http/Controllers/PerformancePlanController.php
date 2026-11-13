@@ -18,21 +18,33 @@ class PerformancePlanController extends Controller
     {
         $editor = RequirePlanningAccess::canEdit($request->user());
         $memberships = $this->ownerMemberships($editor ? null : $request->user()->id);
+        if ($editor) {
+            $memberships = $memberships->whereIn('department_id', RequirePlanningAccess::departmentIds($request->user()))->values();
+        }
         $ownerIds = $memberships->pluck('user_id')->unique();
         $plans = DB::table('performance_plans')
+            ->when($editor, fn ($query) => $query->whereIn('owner_id', $ownerIds))
             ->when(! $editor, fn ($query) => $query->where('owner_id', $request->user()->id)->whereNotNull('published_revision'))
-            ->orderByDesc('updated_at')->get()->map(function (stdClass $plan) use ($editor): array {
+            ->orderByDesc('updated_at')->get()->map(function (stdClass $plan) use ($editor, $request): ?array {
                 $document = $this->document($plan, ! $editor);
 
-                return $this->summary($plan, $document, $editor);
-            });
+                if ($editor) {
+                    $document = $this->scopedDocument($request, $document);
+                    if ($document['kpas'] === [] && DB::table('performance_plan_items')->where('plan_id', $plan->id)->exists()) {
+                        return null;
+                    }
+                }
+
+                return [...$this->summary($plan, $document, $editor), 'can_edit' => $editor && RequirePlanningAccess::canManagePlan($request->user(), (int) $plan->id)];
+            })->filter()->values();
 
         return response()->json([
             'can_edit' => $editor,
+            'department_scoped' => $editor,
             'plans' => $plans,
             'owners' => DB::table('users')->whereIn('id', $ownerIds)->orderBy('name')
                 ->get(['id', 'name', 'employee_number', 'designation']),
-            'departments' => DB::table('departments')->whereIn('id', $memberships->pluck('department_id')->unique())
+            'departments' => DB::table('departments')->whereIn('id', $editor ? RequirePlanningAccess::departmentIds($request->user()) : $memberships->pluck('department_id')->unique())
                 ->orderBy('name')->get(['id', 'name', 'code', 'color']),
             'memberships' => $memberships,
         ]);
@@ -43,6 +55,11 @@ class PerformancePlanController extends Controller
         $record = $this->findAuthorized($request, $plan);
         $editor = RequirePlanningAccess::canEdit($request->user());
         $document = $this->document($record, ! $editor);
+        $canManage = $editor && RequirePlanningAccess::canManagePlan($request->user(), $plan);
+        if ($editor) {
+            $document = $this->scopedDocument($request, $document);
+            abort_if($document['kpas'] === [] && DB::table('performance_plan_items')->where('plan_id', $plan)->exists(), 403);
+        }
         $versions = DB::table('performance_plan_versions')
             ->join('users', 'users.id', '=', 'performance_plan_versions.actor_id')
             ->where('plan_id', $plan)->when(! $editor, fn ($query) => $query->where('event', 'published'))
@@ -55,10 +72,11 @@ class PerformancePlanController extends Controller
 
         return response()->json([
             'plan' => $document,
-            'can_edit' => $editor,
+            'can_edit' => $canManage,
+            'department_view_only' => $editor && ! $canManage,
             'published_revision' => $record->published_revision,
-            'issues' => $editor ? $this->publicationIssues($document) : [],
-            'versions' => $versions,
+            'issues' => $canManage ? $this->publicationIssues($document) : [],
+            'versions' => $editor && ! $canManage ? [] : $versions,
         ]);
     }
 
@@ -71,6 +89,7 @@ class PerformancePlanController extends Controller
     {
         $this->requireEditor($request);
         $data = $this->validatedDocument($document);
+        abort_unless(RequirePlanningAccess::documentInScope($request->user(), $data), 403, 'Choose a person and departments within your assigned editor scope.');
         $id = DB::transaction(function () use ($request, $data, $excelSource): int {
             DB::table('users')->where('id', $data['owner_id'])->lockForUpdate()->first();
             if (DB::table('performance_plans')->where('code', $data['code'])->exists()) {
@@ -99,7 +118,9 @@ class PerformancePlanController extends Controller
     {
         $this->requireEditor($request);
         $this->findAuthorized($request, $plan);
+        $this->requireManagedPlan($request, $plan);
         $data = $this->validatedDocument($request->all(), true);
+        abort_unless(RequirePlanningAccess::documentInScope($request->user(), $data), 403);
         DB::transaction(function () use ($request, $plan, $data): void {
             $record = DB::table('performance_plans')->where('id', $plan)->lockForUpdate()->first();
             abort_unless($record, 404, 'Plan not found.');
@@ -129,6 +150,7 @@ class PerformancePlanController extends Controller
     public function publish(Request $request, int $plan): JsonResponse
     {
         $this->requireEditor($request);
+        $this->requireManagedPlan($request, $plan);
         $request->validate(['revision' => ['required', 'integer', 'min:1']]);
         DB::transaction(function () use ($request, $plan): void {
             $record = DB::table('performance_plans')->where('id', $plan)->lockForUpdate()->first();
@@ -159,6 +181,7 @@ class PerformancePlanController extends Controller
     {
         $this->requireEditor($request);
         $record = $this->findAuthorized($request, $plan);
+        $this->requireManagedPlan($request, $plan);
         $details = $this->deletionDetails($record);
 
         return response()->json([
@@ -199,6 +222,7 @@ class PerformancePlanController extends Controller
     public function destroy(Request $request, int $plan): JsonResponse
     {
         $this->requireEditor($request);
+        $this->requireManagedPlan($request, $plan);
         $data = $request->validate([
             'revision' => ['required', 'integer', 'min:1'], 'deletion_token' => ['nullable', 'string', 'size:64'],
         ]);
@@ -284,10 +308,26 @@ class PerformancePlanController extends Controller
     {
         $record = DB::table('performance_plans')->find($id);
         abort_unless($record, 404);
-        abort_unless(RequirePlanningAccess::canEdit($request->user()) ||
-            ((int) $record->owner_id === $request->user()->id && $record->published_revision !== null), 403);
+        abort_unless((RequirePlanningAccess::canEdit($request->user()) && RequirePlanningAccess::ownerIds($request->user())->contains((int) $record->owner_id)) ||
+            ($request->user()->system_role === 'member' && (int) $record->owner_id === $request->user()->id && $record->published_revision !== null), 403);
 
         return $record;
+    }
+
+    private function requireManagedPlan(Request $request, int $plan): void
+    {
+        abort_unless(RequirePlanningAccess::canManagePlan($request->user(), $plan), 403, 'Mixed-department plans are view-only outside your full department scope.');
+    }
+
+    private function scopedDocument(Request $request, array $document): array
+    {
+        $departments = RequirePlanningAccess::departmentIds($request->user());
+        if (! RequirePlanningAccess::documentInScope($request->user(), $document)) {
+            $document['excel_source'] = null;
+        }
+        $document['kpas'] = array_values(array_filter($document['kpas'], fn ($kpa) => $departments->contains((int) $kpa['department_id'])));
+
+        return $document;
     }
 
     private function validatedDocument(array $document, bool $updating = false): array

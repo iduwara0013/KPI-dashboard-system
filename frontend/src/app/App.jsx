@@ -17,11 +17,12 @@ import HofWorkspace from '../features/hof/HofWorkspace.jsx';
 import DeliveryWorkspace from '../features/delivery/DeliveryWorkspace.jsx';
 import SessionRecovery from '../features/auth/SessionRecovery.jsx';
 import Login from '../features/auth/Login.jsx';
+import ChangePassword from '../features/auth/ChangePassword.jsx';
 import MdWorkspace from '../features/md/MdWorkspace.jsx';
 import MonthlyKpiWorkspace from '../features/kpi/MonthlyKpiWorkspace.jsx';
 import NotificationCenter from '../features/notifications/NotificationCenter.jsx';
 import TvDisplay from '../features/display/TvDisplay.jsx';
-import { resolveWorkspace, workspacePath } from './workspaceRoutes.js';
+import { extraWorkPath, resolveWorkspace, workspacePath } from './workspaceRoutes.js';
 
 const roles = { super_admin: 'System admin', md: 'MD / executive viewer', plan_editor: 'Plan editor', member: 'Team member' };
 const responsibilities = { hof: 'Head of function', manager: 'Manager', employee: 'Employee' };
@@ -45,11 +46,12 @@ const responsibilityTitles = [
 const navigation = [
   ['overview', 'Overview', LayoutDashboard], ['people', 'People', Users],
   ['departments', 'Departments', Building2], ['reporting', 'Reporting Structure', Network], ['access', 'Access & roles', ShieldCheck],
-  ['activity', 'Activity log', Activity],
+  ['activity', 'Audit log', Activity],
 ];
 const colors = ['#c5120c', '#243a5e', '#467ea5', '#b78639', '#7863b7', '#66758b'];
 const blankData = { users: [], departments: [], memberships: [], reporting: [], activity: [] };
-const initialUser = { name: '', email: '', employee_number: '', designation: '', grade: '', system_role: 'member', is_active: true, password: '', memberships: [] };
+const directoryAccount = user => !!user?.email?.endsWith('@directory.cpstl.invalid');
+const initialUser = { contact: '', personnel_area: '', name: '', email: '', employee_number: '', designation: '', grade: '', system_role: 'member', is_active: true, password: '', memberships: [] };
 const initialDepartment = { name: '', code: '', description: '', color: colors[0], is_active: true };
 const idEquals = (a, b) => String(a) === String(b);
 const memberOf = (data, userId) => data.memberships.filter(x => idEquals(x.user_id, userId));
@@ -83,7 +85,7 @@ export default function App() {
   }
   function openNotification(target) {
     const resultsRoute = resolveWorkspace('/kpi-results', session);
-    const next = target.workspace === 'delivery' && target.page === 'reviews' && session.workspaces?.includes('hof') ? '/hof/reviews' : target.workspace === 'results' ? (resultsRoute.page ? workspacePath(resultsRoute.workspace, resultsRoute.page) : '/kpi-results') : target.workspace === 'md'
+    const next = target.workspace === 'extra' ? extraWorkPath(session) : target.workspace === 'delivery' && target.page === 'reviews' && session.workspaces?.includes('hof') ? '/hof/reviews' : target.workspace === 'results' ? (resultsRoute.page ? workspacePath(resultsRoute.workspace, resultsRoute.page) : '/kpi-results') : target.workspace === 'md'
       ? workspacePath('md', 'work')
       : workspacePath('delivery', target.page === 'activities' && !session.workspaces?.includes('manager') ? 'tasks' : target.page);
     if (resolveWorkspace(next, session).error) return;
@@ -100,6 +102,7 @@ export default function App() {
   if (bootError) return <div className="boot"><img className="brand-logo" src="/cpstl-logo.png" alt="CPSTL logo" width="58" height="58" /><h2>Let’s reconnect your workspace</h2><ErrorBox error={bootError} /><button className="btn btn-primary" onClick={loadSession}>Try again</button></div>;
   if (session === undefined) return <div className="boot"><LoaderCircle className="spin" /><p>Opening your workspace…</p></div>;
   if (!session) return <Login onLogin={updateSession} />;
+  if (session.must_change_password) return <ChangePassword session={session} onSession={updateSession} onLogout={discardSession} />;
   let workspace;
   const route = resolveWorkspace(pathname, session);
   const props = {
@@ -199,13 +202,13 @@ function Workspace({ session, onSession, page, onPage }) {
       if (/^\s*[=+@-]|^[\t\r\n]/.test(text)) text = "'" + text;
       return '"' + text.replaceAll('"', '""') + '"';
     };
-    const rows = [['Employee number', 'Name', 'Email', 'Designation', 'Grade', 'System role', 'Status', 'Departments'], ...filteredUsers.map(u => [u.employee_number, u.name, u.email.endsWith('@pending.cpstl.invalid') ? '' : u.email, u.designation, u.grade, roles[u.system_role], u.is_active ? 'Active' : 'Inactive', memberOf(data, u.id).map(m => `${departmentById(data, m.department_id)?.name} (${responsibilities[m.responsibility]})`).join('; ')])];
+    const rows = [['Employee number', 'Name', 'Email', 'Designation', 'Grade', 'Contact', 'Personnel area', 'System role', 'Status', 'Departments'], ...filteredUsers.map(u => [u.employee_number, u.name, directoryAccount(u) || u.email.endsWith('@pending.cpstl.invalid') ? '' : u.email, u.designation, u.grade, u.contact, u.personnel_area, roles[u.system_role], u.is_active ? 'Active' : 'Inactive', memberOf(data, u.id).map(m => `${departmentById(data, m.department_id)?.name} (${responsibilities[m.responsibility]})`).join('; ')])];
     const blob = new Blob(['\uFEFF' + rows.map(row => row.map(safe).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'cpstl-people.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     notify('People directory exported.');
   }
   const filteredUsers = useMemo(() => data.users.filter(u => {
-    const matchesQuery = [u.name, u.email, u.employee_number, u.designation, u.grade].some(v => String(v || '').toLowerCase().includes(query.toLowerCase()));
+    const matchesQuery = [u.name, u.email, u.employee_number, u.designation, u.grade, u.personnel_area].some(v => String(v || '').toLowerCase().includes(query.toLowerCase()));
     return matchesQuery && (departmentFilter === 'all' || memberOf(data, u.id).some(m => idEquals(m.department_id, departmentFilter))) && (statusFilter === 'all' || u.is_active === (statusFilter === 'active'));
   }), [data, query, departmentFilter, statusFilter]);
 
@@ -225,7 +228,7 @@ function Workspace({ session, onSession, page, onPage }) {
         <div className="topbar-right">{page !== 'reporting' && <div className="global-search"><Search size={17} /><input ref={searchRef} value={query} onChange={e => { setQuery(e.target.value); onPage('people'); }} placeholder="Search people…" aria-label="Search people" /><kbd>⌘ K</kbd></div>}<button className="icon-button help-button" aria-label="Open setup guide" onClick={() => setModal({ kind: 'help' })}><CircleHelp size={20} /></button><span className="topbar-divider" /><Avatar name={session.name} small /></div>
       </header>
       <main id="main-content">
-        <div className="page-heading"><div><div className="eyebrow">ORGANIZATION ADMINISTRATION</div><h1>{page === 'overview' ? 'Your organization, in sync.' : page === 'people' ? 'Good people. Connected teams.' : page === 'departments' ? 'A place for every team.' : page === 'reporting' ? 'Department reporting' : page === 'access' ? 'The right access, for everyone.' : 'Every change, accounted for.'}</h1><p>{page === 'overview' ? 'A clear view of your people, departments and responsibilities.' : page === 'people' ? 'Manage accounts, department memberships and reporting relationships.' : page === 'departments' ? 'Build your organization around the teams that make it work.' : page === 'reporting' ? 'View the reporting chart and assign managers within a department.' : page === 'access' ? 'System access and department responsibilities are managed separately.' : 'A record of the organization updates made by administrators.'}</p></div>
+        <div className="page-heading page-heading-compact"><div><h1>{page === 'overview' ? 'Overview' : page === 'people' ? 'People' : page === 'departments' ? 'Departments' : page === 'reporting' ? 'Department reporting' : page === 'access' ? 'Access' : 'Audit log'}</h1></div>
           <div className="heading-actions">{page === 'people' && <button className="btn btn-secondary" onClick={exportPeople} disabled={loading || !filteredUsers.length}><ArrowDownToLine size={16} /> Export</button>}{['overview', 'people'].includes(page) && <button className="btn btn-primary" onClick={() => editUser(null)}><Plus size={18} /> Add person</button>}{page === 'departments' && <RouteLink className="btn btn-secondary" href="/admin/reporting"><Network size={18} /> Reporting Structure</RouteLink>}{page === 'departments' && <button className="btn btn-primary" onClick={() => editDepartment(null)}><Plus size={18} /> Add department</button>}</div>
         </div>
         {loadError && <div className="load-error"><ErrorBox error={loadError} /><button className="btn btn-secondary" onClick={() => refresh().catch(() => {})}>Retry loading</button></div>}
@@ -237,19 +240,19 @@ function Workspace({ session, onSession, page, onPage }) {
             <div className="overview-grid"><section className="panel department-panel"><div className="panel-heading"><div><h2>Departments</h2><p>The teams behind your performance plans</p></div><button className="text-button" onClick={() => navigate('departments')}>View all <ArrowRight size={15} /></button></div>
               <DepartmentTable data={data} onEdit={editDepartment} limit={4} />
               <button className="panel-footer-action" onClick={() => editDepartment(null)}><Plus size={16} /> Create a department</button>
-            </section><section className="setup-panel"><div className="setup-heading"><span className="setup-icon"><Sparkles size={20} /></span><Badge tone="mint">GETTING STARTED</Badge></div><h2>A well-connected<br />workspace starts here.</h2><p>Give every team a home and every person a clear responsibility.</p>
+            </section><section className="setup-panel"><div className="setup-heading"><span className="setup-icon"><Sparkles size={20} /></span><Badge tone="mint">GETTING STARTED</Badge></div><h2>Setup checklist</h2><p>Complete your organization setup.</p>
               <SetupItem done={activeDepartments.length > 0} label="Create your departments" detail={`${activeDepartments.length} departments ready`} onClick={() => navigate('departments')} />
               <SetupItem done={activeUsers.length > 1} label="Bring your people onboard" detail={`${activeUsers.length} active accounts`} onClick={() => navigate('people')} />
               <SetupItem done={activeDepartments.length > 0 && !uncovered.length} label="Assign department heads" detail={uncovered.length ? `${uncovered.length} department${uncovered.length > 1 ? 's' : ''} need a HOF` : 'Department leadership connected'} onClick={() => { navigate('people'); }} />
               <button className="setup-link" onClick={() => setModal({ kind: 'help' })}>Explore the setup guide <ArrowUpRight size={16} /></button>
             </section></div>
-            <section className="panel people-panel"><div className="panel-heading"><div><h2>Your people <span className="count-label">{data.users.length}</span></h2><p>A shared directory, with access that fits each person</p></div><button className="text-button" onClick={() => navigate('people')}>View directory <ArrowRight size={15} /></button></div><PeopleTable users={data.users.slice(0, 5)} onEdit={editUser} compact /><div className="table-footer"><span>Showing {Math.min(data.users.length, 5)} of {data.users.length} people</span><span className="subtle-note"><ShieldCheck size={13} /> Administration access is restricted</span></div></section>
+            <section className="panel people-panel"><div className="panel-heading"><div><h2>Your people <span className="count-label">{data.users.length}</span></h2></div><button className="text-button" onClick={() => navigate('people')}>View directory <ArrowRight size={15} /></button></div><PeopleTable users={data.users.slice(0, 5)} onEdit={editUser} compact /><div className="table-footer"><span>Showing {Math.min(data.users.length, 5)} of {data.users.length} people</span><span className="subtle-note"><ShieldCheck size={13} /> Administration access is restricted</span></div></section>
           </>}
           {page === 'people' && <section className="panel"><div className="directory-tools"><div className="directory-tabs"><button className={statusFilter === 'all' ? 'selected' : ''} onClick={() => setStatusFilter('all')}>All people <span>{data.users.length}</span></button><button className={statusFilter === 'active' ? 'selected' : ''} onClick={() => setStatusFilter('active')}>Active</button><button className={statusFilter === 'inactive' ? 'selected' : ''} onClick={() => setStatusFilter('inactive')}>Inactive</button></div><label className="filter-select"><SlidersHorizontal size={16} /><select aria-label="Filter by department" value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)}><option value="all">All departments</option>{data.departments.map(d => <option value={d.id} key={d.id}>{d.name}</option>)}</select><ChevronDown size={13} /></label></div><PaginatedPeople users={filteredUsers} onEdit={editUser} onRemove={user => setModal({ kind: 'remove', user })} currentUserId={session.id} filterKey={`${query}-${statusFilter}-${departmentFilter}`} /></section>}
-          {page === 'departments' && <><div className="section-toolbar"><span>{activeDepartments.length} active departments <span className="separator-dot">·</span> {data.memberships.length} department memberships</span><Badge tone="mint">MULTIPLE DEPARTMENTS PER PERSON</Badge></div><section className="panel"><DepartmentTable data={data} onEdit={editDepartment} onRemove={department => setModal({ kind: 'remove', department })} /></section><div className="inline-info"><Network size={19} /><p>A person can lead or belong to more than one department. Add department responsibilities from their person profile.</p><button className="text-button" onClick={() => navigate('people')}>Manage people <ArrowRight size={15} /></button></div></>}
+          {page === 'departments' && <><div className="section-toolbar"><span>{activeDepartments.length} active departments <span className="separator-dot">·</span> {data.memberships.length} department memberships</span></div><section className="panel"><DepartmentTable data={data} onEdit={editDepartment} onRemove={department => setModal({ kind: 'remove', department })} /></section><div className="inline-info"><Network size={19} /><p>Manage department memberships from People.</p><button className="text-button" onClick={() => navigate('people')}>Manage people <ArrowRight size={15} /></button></div></>}
           {page === 'reporting' && <DepartmentReporting data={data} onSaved={savedReporting} />}
           {page === 'access' && <AccessView data={data} onManage={() => navigate('people')} />}
-          {page === 'activity' && <section className="panel activity-panel"><div className="panel-heading"><div><h2>Organization activity</h2><p>The latest {data.activity.length} recorded updates</p></div><Badge tone="mint">AUDIT HISTORY</Badge></div><ActivityList data={data} /></section>}
+          {page === 'activity' && <section className="panel activity-panel"><div className="panel-heading"><div><h2>Audit log</h2><p>The latest {data.activity.length} recorded updates</p></div><Badge tone="mint">AUDIT HISTORY</Badge></div><ActivityList data={data} /></section>}
           <footer className="workspace-footer"><span><span className="footer-dot" /> CPSTL Performance Management</span><span>Ceylon Petroleum Storage Terminals Limited</span></footer>
         </>}
       </main>
@@ -289,7 +292,7 @@ function PeopleTable({ users, onEdit, onRemove, currentUserId, compact = false }
           <span>
             <strong>{user.name}</strong>
             <small>{[!compact && user.employee_number, user.grade && `Grade ${user.grade}`].filter(Boolean).join(' · ')}</small>
-            {!compact && <small className="person-email">{user.email.endsWith('@pending.cpstl.invalid') ? 'Work email pending' : user.email}</small>}
+            {!compact && <small className="person-email">{directoryAccount(user) ? 'EPF login' : user.email.endsWith('@pending.cpstl.invalid') ? 'Work email pending' : user.email}</small>}
           </span>
         </div></td>
         <td>{user.designation || '—'}</td>
@@ -358,15 +361,16 @@ function ActivityList({ data }) {
 function AccessView({ data, onManage }) {
   return <><section className="panel access-panel"><div className="panel-heading"><div><h2>System roles</h2><p>Platform access is separate from a person’s designation or department role.</p></div><button className="text-button" onClick={onManage}>Assign access <ArrowRight size={15} /></button></div><div className="role-list">{[
     ['super_admin', 'System administrator', 'Manage people, departments, organization relationships and audit history.', ShieldCheck],
-    ['md', 'MD / executive viewer', 'Reserved for organization reporting. Read-only performance workspace comes in the next phase.', LayoutDashboard],
-    ['plan_editor', 'Performance plan editor', 'Create personal plans, define KPA and KPI weights, set targets and publish plans for HOFs.', FolderTree],
-    ['member', 'Team member', 'HOFs can view their own published plans. Manager and employee workspaces follow in a later phase.', Users],
+    ['md', 'MD / executive viewer', 'View company performance, departments and delivery.', LayoutDashboard],
+    ['plan_editor', 'Performance plan editor', 'Manage plans within assigned departments.', FolderTree],
+    ['member', 'Team member', 'Access assigned plans, tasks and reviews according to department responsibilities.', Users],
   ].map(([id, label, description, Icon]) => <div className="role-row" key={id}><span className="role-icon"><Icon size={23} /></span><div><h3>{label}</h3><p>{description}</p></div><Badge tone={id === 'super_admin' ? 'mint' : 'neutral'}>{data.users.filter(u => u.system_role === id).length} people</Badge></div>)}</div></section><div className="inline-info"><Network size={21} /><p><strong>One person, several responsibilities.</strong> A CIO can be HOF of two departments, while each department keeps its own managers and reporting relationships.</p></div></>;
 }
 
 function UserForm({ user, data, session, onClose, onSaved }) {
   const [form, setForm] = useState(() => user ? {
     ...user,
+    email: directoryAccount(user) ? '' : user.email,
     password: '',
     memberships: user.system_role === 'md' ? [] : memberOf(data, user.id).map(membership => ({
       department_id: String(membership.department_id),
@@ -414,7 +418,7 @@ function UserForm({ user, data, session, onClose, onSaved }) {
       <div className="form-grid">
         {form.system_role !== 'md' && <div className="person-departments">
           <div className="person-department-actions">
-            <span>Departments</span>
+            <span>{form.system_role === 'plan_editor' ? 'Editor departments' : 'Departments'}</span>
             <button className="btn btn-secondary btn-small" type="button"
               disabled={form.memberships.length >= activeDepartments.length}
               onClick={() => set('memberships', [...form.memberships, { department_id: '', responsibility_title: '' }])}>
@@ -422,7 +426,7 @@ function UserForm({ user, data, session, onClose, onSaved }) {
             </button>
           </div>
           <datalist id="department-responsibility-titles">{responsibilityTitles.map(title => <option key={title} value={title} />)}</datalist>
-          {!form.memberships.length && <div className="membership-empty"><Building2 size={20} /><span>Add the departments this person belongs to.</span></div>}
+          {!form.memberships.length && <div className="membership-empty"><Building2 size={20} /><span>Add departments to define this person’s access scope.</span></div>}
           {form.memberships.map((membership, index) => <div className="membership-editor" key={index}>
             <div className="membership-editor-top">
               <span>Department {index + 1}</span>
@@ -430,15 +434,15 @@ function UserForm({ user, data, session, onClose, onSaved }) {
                 onClick={() => set('memberships', form.memberships.filter((_, i) => i !== index))}><Trash2 size={16} /></button>
             </div>
             <div className="form-grid">
-              <Field label="Department" required>
+              <Field label="Department" required hint={form.system_role === 'plan_editor' ? 'Sets this editor’s planning access.' : undefined}>
                 <select value={membership.department_id} required onChange={event => updateMembership(index, { department_id: event.target.value, responsibility_title: '' })}>
                   <option value="">Select department</option>
                   {activeDepartments.filter(department => !form.memberships.some((other, i) => i !== index && idEquals(other.department_id, department.id)))
                     .map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
                 </select>
               </Field>
-              <Field label="Responsibility" required hint="Type the responsibility used in this department.">
-                <input list="department-responsibility-titles" maxLength={120} required value={membership.responsibility_title}
+              <Field label="Responsibility" required={form.system_role !== 'plan_editor'} hint={form.system_role === 'plan_editor' ? 'Optional title; planning access follows the department selected above.' : 'Type the responsibility used in this department.'}>
+                <input list="department-responsibility-titles" maxLength={120} required={form.system_role !== 'plan_editor'} value={membership.responsibility_title}
                   onChange={event => updateMembership(index, { responsibility_title: event.target.value })}
                   placeholder="e.g. CIO, Head of Data Center, Systems Engineer" />
               </Field>
@@ -447,10 +451,11 @@ function UserForm({ user, data, session, onClose, onSaved }) {
         </div>}
         <Field label="Full name" required><input value={form.name} onChange={event => set('name', event.target.value)} maxLength={120} placeholder="e.g. Amali Perera" required /></Field>
         <Field label="Employee / EPF number" required><input value={form.employee_number || ''} onChange={event => set('employee_number', event.target.value.trim())} maxLength={40} placeholder="e.g. EMP012" required /></Field>
-        <Field label="Work email" required hint={user?.email.endsWith('@pending.cpstl.invalid') ? 'Enter the work email and set an initial password before activating.' : undefined}>
-          <input type="email" value={form.email} onChange={event => set('email', event.target.value.trim().toLowerCase())} maxLength={180} placeholder="name@organization.com" required />
+        <Field label="Work email" required={!directoryAccount(user)} hint={user?.email.endsWith('@pending.cpstl.invalid') ? 'Enter the work email and set an initial password before activating.' : undefined}>
+          <input type="email" value={form.email} onChange={event => set('email', event.target.value.trim().toLowerCase())} maxLength={180} placeholder={directoryAccount(user) ? 'Optional - this account uses EPF login' : 'name@organization.com'} required={!directoryAccount(user)} />
         </Field>
         <Field label="Designation" required><input value={form.designation || ''} onChange={event => set('designation', event.target.value)} placeholder="e.g. CIO, DGM, Systems Executive" maxLength={120} required /></Field>
+        <Field label="Contact number"><input type="tel" maxLength={40} value={form.contact || ''} onChange={event => set('contact', event.target.value)} /></Field><Field label="Personnel area / location"><input maxLength={120} value={form.personnel_area || ''} onChange={event => set('personnel_area', event.target.value)} /></Field>
         <Field label="Grade"><input value={form.grade || ''} onChange={event => set('grade', event.target.value)} placeholder="e.g. A5" maxLength={30} /></Field>
         <Field label="System access" required><select disabled={isSelf} value={form.system_role} onChange={event => set('system_role', event.target.value)}>{Object.entries(roles).map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></Field>
         <Field label="Account status"><select disabled={isSelf} value={String(form.is_active)} onChange={event => set('is_active', event.target.value === 'true')}><option value="true">Active</option><option value="false">Inactive</option></select></Field>
@@ -459,7 +464,7 @@ function UserForm({ user, data, session, onClose, onSaved }) {
           <input type="password" autoComplete="new-password" minLength={6} maxLength={128} value={form.password} onChange={event => set('password', event.target.value)} required={!user} />
         </Field>
       </div>
-      <div className="form-note"><Network size={16} /><span>{form.system_role === 'md' ? 'The Managing Director has company-wide dashboard access.' : 'Set reporting connections and department workflow access in Department reporting.'}</span></div>
+      <div className="form-note"><Network size={16} /><span>{form.system_role === 'md' ? 'The Managing Director has company-wide dashboard access.' : form.system_role === 'plan_editor' ? 'Plan editors can access only the departments assigned above. Mixed-department plans are shown as a filtered, read-only view.' : 'Set reporting connections and department workflow access in Department reporting.'}</span></div>
     </div>
     <div className="modal-footer">
       <button className="btn btn-secondary" type="button" onClick={onClose} disabled={busy}>Cancel</button>
@@ -487,7 +492,7 @@ function HelpContent({ onClose }) {
     ['02', 'Add your people', 'Create accounts with an employee number, designation and system role. Inactive accounts cannot sign in.'],
     ['03', 'Connect responsibilities', 'Add department memberships and choose HOF, manager or employee. A person can hold different responsibilities across departments.'],
     ['04', 'Set reporting relationships', 'Select one or more reporting managers in the same department. Circular reporting and self-reporting are prevented.'],
-  ].map(([number, title, text]) => <div className="help-step" key={number}><span>{number}</span><div><h3>{title}</h3><p>{text}</p></div></div>)}<div className="form-note"><FolderTree size={19} /><span>Open Performance plans to create and publish HOF plans. Excel import and delegated work are later milestones.</span></div></div><div className="modal-footer"><button className="btn btn-primary" onClick={onClose}>Got it <Check size={16} /></button></div></>;
+  ].map(([number, title, text]) => <div className="help-step" key={number}><span>{number}</span><div><h3>{title}</h3><p>{text}</p></div></div>)}<div className="form-note"><FolderTree size={19} /><span>Create personal plans in Performance plans. Set reporting connections in Department reporting.</span></div></div><div className="modal-footer"><button className="btn btn-primary" onClick={onClose}>Got it <Check size={16} /></button></div></>;
 }
 
 

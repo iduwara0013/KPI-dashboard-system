@@ -34,7 +34,7 @@ class AdminController extends Controller
     public function saveUser(Request $request, ?User $user = null): JsonResponse
     {
         $request->merge([
-            'email' => strtolower(trim((string) $request->input('email'))),
+            'email' => ! $request->filled('email') && str_ends_with((string) $user?->email, '@directory.cpstl.invalid') ? $user->email : strtolower(trim((string) $request->input('email'))),
             'employee_number' => strtoupper(trim((string) $request->input('employee_number'))),
         ]);
         $exists = $user?->exists ?? false;
@@ -44,6 +44,8 @@ class AdminController extends Controller
             'employee_number' => ['required', 'string', 'max:40', Rule::unique('users')->ignore($user?->id)],
             'designation' => ['required', 'string', 'max:120'],
             'grade' => ['nullable', 'string', 'max:30'],
+            'contact' => ['sometimes', 'nullable', 'string', 'max:40'],
+            'personnel_area' => ['sometimes', 'nullable', 'string', 'max:120'],
             'system_role' => ['required', Rule::in(['super_admin', 'md', 'plan_editor', 'member'])],
             'is_active' => ['required', 'boolean'],
             'password' => [$exists ? 'nullable' : 'required', 'string', 'min:6', 'max:128'],
@@ -95,6 +97,11 @@ class AdminController extends Controller
                 $saved->setRememberToken(Str::random(60));
             }
             $saved->fill($attributes)->save();
+            if (! empty($data['password']) && $saved->system_role !== 'super_admin' && str_ends_with($saved->email, '@directory.cpstl.invalid')) {
+                $saved->must_change_password = true;
+                $saved->password_changed_at = null;
+                $saved->save();
+            }
             if ($revokeSessions && config('session.driver') === 'database') {
                 DB::table(config('session.table', 'sessions'))->where('user_id', $saved->id)->delete();
             }
@@ -385,7 +392,7 @@ class AdminController extends Controller
     private function userState(User $user): array
     {
         return [
-            ...$user->only(['id', 'name', 'email', 'employee_number', 'designation', 'grade', 'system_role', 'is_active']),
+            ...$user->only(['id', 'name', 'email', 'employee_number', 'designation', 'grade', 'system_role', 'is_active', 'contact', 'personnel_area', 'source_function']),
             'memberships' => DB::table('department_memberships')->where('user_id', $user->id)->get()->toArray(),
             'reporting' => DB::table('reporting_relationships')->where('user_id', $user->id)->get()->toArray(),
         ];

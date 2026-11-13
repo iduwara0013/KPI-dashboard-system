@@ -3,6 +3,7 @@
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\DeliveryController;
 use App\Http\Controllers\ExcelPlanImportController;
+use App\Http\Controllers\ExtraWorkController;
 use App\Http\Controllers\HofWorkController;
 use App\Http\Controllers\KpiAssignmentController;
 use App\Http\Controllers\MdDashboardController;
@@ -43,16 +44,29 @@ Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecuti
     });
     Route::post('/login', [SessionController::class, 'login'])->middleware('throttle:5,1');
     Route::post('/logout', [SessionController::class, 'logout'])->middleware('auth');
+    Route::post('/password/change', [SessionController::class, 'changePassword'])->middleware(['auth', 'throttle:5,1']);
     Route::middleware('auth')->prefix('allocations')->group(function () {
         Route::get('/workspace', [PersonalAllocationController::class, 'workspace']);
         Route::get('/people/{owner}/{year}', [PersonalAllocationController::class, 'show'])->whereNumber(['owner', 'year']);
         Route::post('/draft', [PersonalAllocationController::class, 'save'])->middleware('throttle:30,1');
         Route::post('/{allocation}/publish', [PersonalAllocationController::class, 'publish'])->whereNumber('allocation')->middleware('throttle:30,1');
     });
+    Route::middleware('auth')->prefix('extra-work')->group(function () {
+        Route::get('/workspace', [ExtraWorkController::class, 'workspace']);
+        Route::post('/assignments', [ExtraWorkController::class, 'assign'])->middleware('throttle:30,1');
+        Route::get('/assignments/{assignment}/history', [ExtraWorkController::class, 'history'])->whereNumber('assignment');
+        Route::put('/assignments/{assignment}/weight', [ExtraWorkController::class, 'approveWeight'])->whereNumber('assignment')->middleware('throttle:30,1');
+        Route::put('/tasks/{task}/progress', [ExtraWorkController::class, 'progress'])->whereNumber('task')->middleware('throttle:30,1');
+        Route::put('/tasks/{task}/tasks', [ExtraWorkController::class, 'breakdown'])->whereNumber('task')->middleware('throttle:30,1');
+        Route::put('/tasks/{task}/deadline', [ExtraWorkController::class, 'extendDeadline'])->whereNumber('task')->middleware('throttle:30,1');
+        Route::post('/tasks/{task}/submit', [ExtraWorkController::class, 'submit'])->whereNumber('task')->middleware('throttle:30,1');
+        Route::post('/submissions/{submission}/review', [ExtraWorkController::class, 'review'])->whereNumber('submission')->middleware('throttle:30,1');
+    });
     Route::middleware(['auth', RequireDeliveryAccess::class])->prefix('delivery')->group(function () {
         Route::get('/workspace', [DeliveryController::class, 'workspace']);
         Route::post('/personal-plan/start', [DeliveryController::class, 'startPersonalWork'])->middleware('throttle:30,1');
         Route::put('/assignments/{assignment}/tasks', [DeliveryController::class, 'breakdown'])->whereNumber('assignment')->middleware('throttle:30,1');
+        Route::put('/tasks/{task}/deadline', [DeliveryController::class, 'extendDeadline'])->whereNumber('task')->middleware('throttle:30,1');
         Route::put('/tasks/{task}/progress', [DeliveryController::class, 'progress'])->whereNumber('task')->middleware('throttle:30,1');
         Route::put('/tasks/{task}/tasks', [DeliveryController::class, 'breakdownTask'])->whereNumber('task')->middleware('throttle:30,1');
         Route::post('/tasks/{task}/submit', [DeliveryController::class, 'submit'])->whereNumber('task')->middleware('throttle:30,1');

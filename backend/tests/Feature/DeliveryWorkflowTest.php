@@ -35,6 +35,7 @@ class DeliveryWorkflowTest extends TestCase
         $this->employee = $this->user('EMP007');
         $this->otherEmployee = $this->user('EMP008');
         $this->editor = $this->user('EMP011');
+        $this->grantPlanningDepartments($this->editor);
         $department = DB::table('departments')->where('code', 'IT')->value('id');
         $this->actingAs($this->editor);
         $payload = ['code' => 'DELIVERY-2026', 'title' => 'Delivery test plan', 'owner_id' => $this->hof->id, 'year' => 2026,

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { ArrowRight, Building2, ChevronDown, ClipboardList, FolderTree, Search, Target, UserCheck } from 'lucide-react';
 import { Badge, Empty } from '../../components/ui.jsx';
 import './breakdown.css';
@@ -8,6 +8,12 @@ const pct = value => `${Number((Number(value) * 100).toFixed(2))}%`;
 export default function PlanBreakdown({ activities, departmentOf, assigneeOf, onAssign, onAssignKpi }) {
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState(new Set());
+  const [expandedDetails, setExpandedDetails] = useState(new Set());
+  const prefix = useId();
+  const detailKey = (area, kpi, row) => JSON.stringify([area.key, kpi.kpi_code, ...(row ? [row.activity_code] : [])]);
+  const panelId = key => `${prefix}-${encodeURIComponent(key)}`;
+  const detailOpen = key => Boolean(query) || expandedDetails.has(key);
+  function toggleDetail(key) { setExpandedDetails(previous => { const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }
   const areas = useMemo(() => {
     const groups = new Map();
     for (const row of activities) {
@@ -30,34 +36,64 @@ export default function PlanBreakdown({ activities, departmentOf, assigneeOf, on
   function toggle(key) { setCollapsed(previous => { const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }
 
   return <div className="plan-breakdown">
-    <section className="breakdown-legend" aria-label="Understand your plan structure">
+    <details className="plan-structure-help"><summary>About KPA, KPI &amp; activities</summary><section className="breakdown-legend" aria-label="Understand your plan structure">
       <article className="legend-kpa"><span className="breakdown-level-icon"><FolderTree size={22} /></span><div><small>01 · RESPONSIBILITY</small><h2>KPA <span>Key Performance Area</span></h2><p>The area of work you are responsible for.</p></div><ArrowRight className="legend-arrow" size={17} /></article>
       <article className="legend-kpi"><span className="breakdown-level-icon"><Target size={22} /></span><div><small>02 · MEASUREMENT</small><h2>KPI <span>Key Performance Indicator</span></h2><p>The target used to measure that area.</p></div><ArrowRight className="legend-arrow" size={17} /></article>
       <article className="legend-activity"><span className="breakdown-level-icon"><ClipboardList size={22} /></span><div><small>03 · DELIVERY</small><h2>Activity <span>Work to be done</span></h2><p>The actions needed to deliver the KPI.</p></div></article>
-    </section>
+    </section></details>
     <div className="breakdown-totals"><div><strong>{areas.length}</strong><span>KPAs</span></div><div><strong>{kpiCount}</strong><span>KPIs</span></div><div><strong>{activities.length}</strong><span>Activities</span></div><p><strong>{pct(allocation)}</strong> of your personal plan in this scope<small>Weights show allocation, not completed performance.</small></p></div>
-    <div className="breakdown-toolbar"><label className="breakdown-search"><Search size={16} /><input aria-label="Search plan breakdown" placeholder="Find a KPA, KPI or activity…" value={search} onChange={e => setSearch(e.target.value)} /></label><div><button className="text-button" disabled={Boolean(query)} onClick={() => setCollapsed(new Set())}>Expand all</button><span /><button className="text-button" disabled={Boolean(query)} onClick={() => setCollapsed(new Set(areas.map(area => area.key)))}>Collapse all</button></div></div>
+    <div className="breakdown-toolbar"><label className="breakdown-search"><Search size={16} /><input aria-label="Search plan breakdown" placeholder="Find a KPA, KPI or activity…" value={search} onChange={e => setSearch(e.target.value)} /></label><div><button className="text-button" disabled={Boolean(query)} onClick={() => { setCollapsed(new Set()); setExpandedDetails(new Set(areas.flatMap(area => area.kpis.flatMap(kpi => [detailKey(area, kpi), ...kpi.activities.map(row => detailKey(area, kpi, row))])))); }}>Expand all</button><span /><button className="text-button" disabled={Boolean(query)} onClick={() => { setCollapsed(new Set(areas.map(area => area.key))); setExpandedDetails(new Set()); }}>Collapse all</button></div></div>
     {!areas.length ? <section className="panel"><Empty icon={FolderTree} title="Your plan structure will appear here" text="Choose a year and department with published activities to explore its KPAs and KPIs." /></section> : !visible.length ? <section className="panel"><Empty icon={Search} title="No matching responsibilities" text="Try another KPA, KPI or activity name." action={<button className="btn btn-secondary" onClick={() => setSearch('')}>Clear search</button>} /></section> : visible.map(area => {
       const closed = collapsed.has(area.key) && !query;
       const count = area.kpis.reduce((total, kpi) => total + kpi.activities.length, 0);
-      return <section className="breakdown-area" key={area.key}>
-        <button className="breakdown-area-heading" aria-expanded={!closed} aria-controls={`area-${area.key}`} onClick={() => toggle(area.key)}>
-          <span className="breakdown-level-icon"><FolderTree size={22} /></span><span className="breakdown-area-title"><span className="breakdown-type kpa-type">KPA · KEY PERFORMANCE AREA</span><h2>{area.kpa_title}</h2><span className="breakdown-area-meta"><span><Building2 size={12} />{departmentOf(area.department_id)?.name}</span><span>{area.kpis.length} KPI{area.kpis.length === 1 ? '' : 's'} · {count} {count === 1 ? 'activity' : 'activities'}{query ? ' shown' : ''}</span></span></span>
-          <span className="breakdown-area-weight"><strong>{pct(area.kpa_weight)}</strong><small>of personal plan</small></span><ChevronDown className={closed ? 'breakdown-chevron closed' : 'breakdown-chevron'} size={18} />
+      return <section className="breakdown-area breakdown-compact" key={area.key}>
+        <button type="button" className="breakdown-area-heading" aria-expanded={!closed} aria-controls={panelId(area.key)} onClick={() => toggle(area.key)}>
+          <span className="breakdown-level-icon"><FolderTree size={22} /></span><span className="breakdown-area-title"><span className="breakdown-type kpa-type">KPA</span><h2>{area.kpa_title}</h2><span className="breakdown-area-meta"><span><Building2 size={12} />{departmentOf(area.department_id)?.name}</span><span>{area.kpis.length} KPIs · {count} activities{query ? ' shown' : ''}</span></span></span>
+          <Weight value={area.kpa_weight} label="of personal plan" tone="kpa" /><ChevronDown className={closed ? 'breakdown-chevron closed' : 'breakdown-chevron'} size={19} />
         </button>
-        {!closed && <div className="breakdown-area-body" id={`area-${area.key}`}>
-          {area.kpis.map(kpi => <section className="breakdown-kpi" key={kpi.kpi_code}>
-            <div className="breakdown-kpi-heading"><span className="breakdown-level-icon"><Target size={19} /></span><div><span className="breakdown-type kpi-type">KPI · KEY PERFORMANCE INDICATOR</span><h3>{kpi.kpi_title}</h3></div><div className="breakdown-kpi-weight"><strong>{pct(kpi.kpi_weight)}</strong><small>within this KPA</small></div></div>
-            {onAssignKpi && <div className="breakdown-kpi-assign"><span>{kpi.delegation ? 'Overall KPI owner assigned · activity overrides remain visible below' : 'Assign the full KPI, or assign individual activities below'}</span><button className="btn btn-secondary btn-small" onClick={() => onAssignKpi(kpi)}>{kpi.delegation ? 'Edit KPI assignment' : 'Assign KPI'}<ArrowRight size={12} /></button></div>}
-            <div className="breakdown-measure"><div><small>TARGET</small><strong>{kpi.target_value}{kpi.target_unit === 'percent' ? '%' : <span> {kpi.target_unit}</span>}</strong></div><div><small>MONITORING</small><strong>{kpi.frequency}</strong></div><div><small>SUCCESS DIRECTION</small><strong>{kpi.direction === 'lower' ? 'Lower is better' : 'Higher is better'}</strong></div><div><small>PERSONAL PLAN SHARE</small><strong>{pct(Number(area.kpa_weight) * Number(kpi.kpi_weight))}</strong></div></div>
-            <div className="breakdown-activity-caption"><ClipboardList size={14} /><strong>Activities</strong><span>The work that delivers this KPI</span></div>
-            <ol className="breakdown-activity-list">{kpi.activities.map((row, index) => {
-              const deadline = row.assignment ? row.assignment.due_date : row.due_date;
-              return <li key={row.activity_code}><span className="breakdown-activity-number">{String(index + 1).padStart(2, '0')}</span><div className="breakdown-activity-content"><span className="breakdown-type activity-type">ACTIVITY</span><h4>{row.activity}</h4><div className="breakdown-activity-meta"><span><UserCheck size={12} />{assigneeOf(row)}</span>{row.assignment && row.delegation && <Badge>{row.assignment.ownership_mode === "kpi" ? "Follows KPI owner" : "Individual override"}</Badge>}{deadline && <span>Due {deadline}</span>}{(row.source_changed || !row.assignee_eligible) && <Badge tone="draft">Review assignment</Badge>}</div><div className="breakdown-weight-example"><span>{pct(area.kpa_weight)} KPA</span><b>×</b><span>{pct(kpi.kpi_weight)} KPI</span><b>×</b><span>{pct(row.activity_weight)} activity</span><b>=</b><strong>{pct(row.personal_weight)} of personal plan</strong></div></div><div className="breakdown-activity-action"><strong>{pct(row.activity_weight)}</strong><small>within this KPI</small><button className="btn btn-secondary btn-small" onClick={() => onAssign(row)}>{row.assignment ? 'Edit owner' : 'Assign owner'}<ArrowRight size={12} /></button></div></li>;
-            })}</ol>
-          </section>)}
+        {!closed && <div className="breakdown-area-body" id={panelId(area.key)}>
+          {area.kpis.map(kpi => {
+            const key = detailKey(area, kpi), open = detailOpen(key);
+            return <section className="plan-kpi-card" key={key}>
+              <div className="plan-kpi-top">
+                <button type="button" className="plan-node-toggle" aria-label={`${open ? 'Collapse' : 'Expand'} KPI: ${kpi.kpi_title}`} aria-expanded={open} aria-controls={panelId(key)} onClick={() => toggleDetail(key)}>
+                  <span className="plan-node-copy"><span className="breakdown-type kpi-type">KPI · {kpi.activities.length} activities</span><h3>{kpi.kpi_title}</h3></span>
+                  <Weight value={kpi.kpi_weight} label="within KPA" tone="kpi" /><ChevronDown size={18} className={`breakdown-chevron ${open ? '' : 'closed'}`} />
+                </button>
+                {onAssignKpi && <button className="btn btn-secondary btn-small plan-owner-button" onClick={() => onAssignKpi(kpi)}>{kpi.delegation ? 'Edit KPI owner' : 'Assign KPI'}<ArrowRight size={14} /></button>}
+              </div>
+              {open && <div className="plan-kpi-body" id={panelId(key)}>
+                <details className="plan-target-details"><summary>KPI target details <span>{pct(Number(area.kpa_weight) * Number(kpi.kpi_weight))} of personal plan</span></summary>
+                  <div className="breakdown-measure"><div><small>Target</small><strong>{kpi.target_value}{kpi.target_unit === 'percent' ? '%' : <span> {kpi.target_unit}</span>}</strong></div><div><small>Monitoring</small><strong>{kpi.frequency}</strong></div><div><small>Direction</small><strong>{kpi.direction === 'lower' ? 'Lower is better' : 'Higher is better'}</strong></div></div>
+                </details>
+                <ol className="plan-activity-items" aria-label={`Activities for ${kpi.kpi_title}`}>{kpi.activities.map((row, index) => {
+                  const rowKey = detailKey(area, kpi, row), rowOpen = detailOpen(rowKey);
+                  const deadline = row.assignment ? row.assignment.due_date : row.due_date;
+                  return <li className="plan-activity-card" key={rowKey}>
+                    <div className="plan-activity-top">
+                      <button type="button" className="plan-node-toggle" aria-label={`${rowOpen ? 'Collapse' : 'Expand'} activity: ${row.activity}`} aria-expanded={rowOpen} aria-controls={panelId(rowKey)} onClick={() => toggleDetail(rowKey)}>
+                        <span className="plan-node-copy"><span className="breakdown-type activity-type">Activity {String(index + 1).padStart(2, '0')}</span><h4>{row.activity}</h4><span className="plan-owner-summary"><UserCheck size={14} />{assigneeOf(row)}</span>{(row.source_changed || !row.assignee_eligible) && <Badge tone="draft">Review assignment</Badge>}</span>
+                        <Weight value={row.activity_weight} label="within KPI" tone="activity" /><ChevronDown size={18} className={`breakdown-chevron ${rowOpen ? '' : 'closed'}`} />
+                      </button>
+                      <span className="plan-share"><strong>{pct(row.personal_weight)}</strong>of personal plan</span>
+                      <button className="btn btn-secondary btn-small plan-owner-button" onClick={() => onAssign(row)}>{row.assignment ? 'Edit owner' : 'Assign owner'}<ArrowRight size={14} /></button>
+                    </div>
+                    {rowOpen && <div className="plan-activity-details" id={panelId(rowKey)}>
+                      <div className="plan-detail-facts">{deadline && <span><small>Due date</small><strong>{deadline}</strong></span>}{row.assignment && row.delegation && <Badge>{row.assignment.ownership_mode === 'kpi' ? 'Follows KPI owner' : 'Individual override'}</Badge>}</div>
+                      <div className="plan-weight-formula"><span>Personal plan share</span><strong>{pct(area.kpa_weight)} × {pct(kpi.kpi_weight)} × {pct(row.activity_weight)} = {pct(row.personal_weight)}</strong></div>
+                    </div>}
+                  </li>;
+                })}</ol>
+              </div>}
+            </section>;
+          })}
         </div>}
       </section>;
     })}
   </div>;
+}
+
+function Weight({ value, label, tone }) {
+  const width = Math.min(100, Math.max(0, Number(value) * 100 || 0));
+  return <span className={`plan-weight plan-weight-${tone}`}><strong>{pct(value)}</strong><small>{label}</small><span className="plan-weight-track" aria-hidden="true"><i style={{ width: `${width}%` }} /></span></span>;
 }

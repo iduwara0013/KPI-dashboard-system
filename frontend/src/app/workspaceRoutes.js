@@ -1,9 +1,9 @@
 const pages = {
   admin: ['overview', 'people', 'departments', 'reporting', 'access', 'activity'],
-  planning: ['overview', 'plans', 'history', 'allocations', 'results'],
-  md: ['overview', 'departments', 'hofs', 'work'],
-  hof: ['overview', 'breakdown', 'activities', 'own', 'delegated', 'team', 'reviews', 'personal', 'results'],
-  delivery: ['overview', 'activities', 'kpis', 'tasks', 'reviews', 'team', 'personal', 'results'],
+  planning: ['extra', 'overview', 'plans', 'history', 'allocations', 'results'],
+  md: ['extra', 'overview', 'departments', 'hofs', 'work'],
+  hof: ['extra', 'overview', 'breakdown', 'activities', 'own', 'delegated', 'team', 'reviews', 'personal', 'results'],
+  delivery: ['extra', 'overview', 'activities', 'kpis', 'tasks', 'reviews', 'team', 'personal', 'results'],
 };
 
 export function workspacePath(workspace, page) {
@@ -45,7 +45,12 @@ export function resolveWorkspace(pathname, user) {
   const [workspace, page = workspace === 'delivery' ? defaultDeliveryPage(user) : 'overview', ...extra]
     = path === '/' ? [home] : path.slice(1).split('/');
   if (extra.length || !Object.hasOwn(pages, workspace) || !pages[workspace].includes(page)) return { error: 'not_found' };
-  const editorOnly = workspace === 'planning' && page === 'allocations';
+  const editorOnly = workspace === 'planning' && ['allocations', 'extra'].includes(page);
   if (!access[workspace] || (editorOnly && role !== 'plan_editor')) return { error: 'forbidden' };
   return { workspace, page };
+}
+
+export function extraWorkPath(user) {
+  const workspace = user.system_role === 'md' ? 'md' : user.system_role === 'plan_editor' ? 'planning' : user.workspaces?.includes('hof') ? 'hof' : 'delivery';
+  return workspacePath(workspace, 'extra');
 }

@@ -24,6 +24,7 @@ class MonthlyKpiResultTest extends TestCase
         $this->seed();
         $this->hof = $this->person('EMP001');
         $this->editor = $this->person('EMP011');
+        $this->grantPlanningDepartments($this->editor);
         $department = DB::table('departments')->where('code', 'IT')->value('id');
         $kpi = [
             'code' => 'UPTIME', 'title' => 'System uptime', 'weight' => 0.5,

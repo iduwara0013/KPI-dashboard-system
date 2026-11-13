@@ -135,7 +135,7 @@ class HofWorkController extends Controller
                 }
                 $eligible = ! $assignment || $this->recipientRole($owner, (int) $assignment->assignee_id, $activity['department_id']) === $assignment->recipient_role;
                 $delegation = $delegations->first(fn ($row) => (int) $row->plan_id === $activity['plan_id'] && $row->kpi_code === $activity['kpi_code']);
-                $rows[] = [...$activity, 'assignment' => $assignment,
+                $rows[] = [...$activity, 'timeliness' => $assignment && app(DeliveryController::class)->context($assignment)['valid'] ? app(TimelinessController::class)->forAssignment($assignment)['summary'] : null, 'assignment' => $assignment,
                     'source_changed' => $assignment && $assignment->source_signature !== $activity['source_signature'],
                     'assignee_eligible' => $eligible,
                     'delegation' => $delegation,

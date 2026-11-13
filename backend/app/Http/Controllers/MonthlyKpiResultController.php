@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\RequirePlanningAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -19,6 +20,7 @@ class MonthlyKpiResultController extends Controller
         $future = $period > $date->format('Y-m');
         $user = $request->user();
         $editor = $user->system_role === 'plan_editor';
+        $editorDepartments = $editor ? RequirePlanningAccess::departmentIds($user) : collect();
         $people = DB::table('users')->pluck('name', 'id');
         $rows = [];
 
@@ -30,12 +32,24 @@ class MonthlyKpiResultController extends Controller
                 $kpis += $this->archivedKpis($plan, $submissions->except(array_keys($kpis)));
             }
             foreach ($kpis as $code => $kpi) {
+                if ($editor && ! $editorDepartments->contains((int) $kpi['department_id'])) {
+                    continue;
+                }
                 $isParticipant = in_array($user->id, [$kpi['reporter_id'], $kpi['reviewer_id']], true);
                 $isPlanOwner = $kpi['active_hof'] && $user->id === (int) $plan->owner_id;
                 if (! $editor && $user->system_role !== 'md' && ! $isParticipant && ! $isPlanOwner) {
                     continue;
                 }
                 $history = $submissions->get($code, collect());
+                if ($editor) {
+                    $history = $history->filter(function ($item) use ($plan, $code, $editorDepartments): bool {
+                        $snapshot = clone $plan;
+                        $snapshot->published_revision = (int) $item->source_revision;
+
+                        return collect(app(HofWorkController::class)->activities($snapshot))
+                            ->contains(fn ($activity) => $activity['kpi_code'] === $code && $editorDepartments->contains((int) $activity['department_id']));
+                    });
+                }
                 $latest = $history->first();
                 $status = $latest->status ?? 'pending_measurement';
                 $target = $latest ? (float) $latest->target_value : $kpi['target_value'];

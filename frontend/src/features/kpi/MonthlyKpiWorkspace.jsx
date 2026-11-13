@@ -80,8 +80,8 @@ export default function MonthlyKpiWorkspace({ session, embedded = false, notific
       <div><a className="btn btn-secondary" href="/"><ArrowLeft size={16} />Back to workspace</a><Avatar name={session.name} small /></div>
     </header>}
     <Content>
-      <div className="page-heading">
-        <div><div className="eyebrow">PERFORMANCE MEASUREMENT</div><h1>Monthly KPI Results</h1><p>Track actual results against published monthly targets and see which results have been verified.</p></div>
+      <div className="page-heading page-heading-compact">
+        <div><h1>Monthly KPI Results</h1></div>
         {session.system_role === 'md' && <Badge>Read-only access</Badge>}
       </div>
       <div className="monthly-kpi-toolbar">
@@ -100,7 +100,7 @@ export default function MonthlyKpiWorkspace({ session, embedded = false, notific
         </div>
         {visibleRows.length === 0 ? <section className="panel"><Empty icon={BarChart3} title={rows.length ? 'No results match the filters' : 'No monthly KPIs for this period'} text={rows.length ? 'Choose a different department or status.' : 'This workspace shows published KPIs with a Monthly monitoring frequency that you have access to.'} /></section> :
           <section className="panel">
-            <div className="panel-heading"><div><h2>Results register</h2><p>A positive gap means the actual is better than target. The status shows whether it has been approved.</p></div></div>
+            <div className="panel-heading"><div><h2>Results register</h2><p>Positive gap = better than target</p></div></div>
             <div className="table-scroll"><table className="monthly-kpi-table">
               <thead><tr><th>KPI / Department</th><th>Owner / Reviewer</th><th>Target</th><th>Actual</th><th>Gap</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{visibleRows.map(row => {

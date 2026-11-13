@@ -1,0 +1,58 @@
+/* Shared progressive disclosure: primary numbers and actions stay in view. */
+.info-details {
+  min-width: 0;
+  margin: 14px 0;
+  border: 1px solid var(--theme-line, #e1e7ef);
+  border-radius: 10px;
+  background: var(--theme-surface, #fff);
+  color: var(--theme-ink, #26344b);
+}
+.info-details > summary {
+  padding: 13px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.info-details > summary:hover { background: var(--theme-raised, #f3f6fa); border-radius: 10px; }
+.info-details > summary:focus-visible { outline: 2px solid var(--theme-ink, #26344b); outline-offset: 2px; }
+.info-details[open] > summary { border-bottom: 1px solid var(--theme-line, #e1e7ef); }
+.info-details-body { padding: 14px 16px; min-width: 0; }
+.info-details-body > .form-note, .info-details-body > .planning-intro,
+.info-details-body > .task-card-notes { margin: 0; }
+.info-details-body > .form-note { padding: 0; background: none; border: 0; }
+.info-details-body > .planning-intro { padding: 0; border: 0; box-shadow: none; }
+.analytics-details > .analytics-grid { padding: 16px; }
+.dashboard-analytics .analytics-heading { margin-bottom: 14px; }
+.dashboard-analytics .analytics-heading h2 { margin: 0; font-size: 21px; }
+.dashboard-analytics .analytics-metrics { margin-bottom: 12px; }
+.dashboard-analytics .analytics-metrics strong { font-size: 30px; font-variant-numeric: tabular-nums; }
+.work-focus-premium > header { padding: 18px 22px; }
+.task-card .info-details { margin: 16px 0 0; }
+.task-card .info-details-body .task-card-notes { padding: 0; border: 0; background: none; }
+.mixed-kpi-card > div:first-child { flex: 1; min-width: 0; }
+.mixed-kpi-card .info-details { width: 100%; }
+.mixed-kpi-card .mixed-kpi-action > .badge { font-size: 16px; font-weight: 700; }
+.delivery-parent-progress .delivery-progress strong,
+.hof-progress > span > strong, .md-progress > span { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.monthly-kpi-table td:nth-child(3) > strong,
+.monthly-kpi-table td:nth-child(4) > strong,
+.monthly-kpi-table td:nth-child(5) > strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.allocation-summary strong, .weight-pill { font-variant-numeric: tabular-nums; }
+.compact-summary-line { display: inline-flex; align-items: center; justify-content: space-between; gap: 16px; width: calc(100% - 24px); vertical-align: middle; }
+.compact-summary-line > span { min-width: 0; overflow-wrap: anywhere; }
+.compact-summary-line > strong { flex-shrink: 0; font-size: 23px; color: var(--theme-ink, #26344b); font-variant-numeric: tabular-nums; }
+.compact-summary-line small { font-size: 12px; font-weight: 400; color: var(--theme-muted, #6a7c94); }
+.published-kpa > .info-details { margin: 14px 18px; }
+.planning-scope { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; font-size: 13px; color: var(--theme-muted, #6a7c94); }
+.planning-scope > span:first-child { font-weight: 600; margin-right: 6px; }
+.md-content .md-hero { padding: 22px 26px; margin-bottom: 20px; }
+.md-content .md-hero h2 { font-size: 25px; margin: 8px 0; }
+.md-content .md-hero div > span:last-child { margin-top: 12px; }
+@media (max-width: 650px) {
+  .info-details > summary { padding: 12px; font-size: 13px; }
+  .info-details-body, .analytics-details > .analytics-grid { padding: 12px; }
+  .work-focus-premium > header { padding: 16px; }
+  .md-content .md-hero { padding: 18px; }
+}

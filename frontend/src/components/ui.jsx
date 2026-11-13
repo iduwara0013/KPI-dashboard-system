@@ -22,6 +22,9 @@ export function RouteLink({ href, onNavigate, ...props }) {
   return <a {...props} href={href} onClick={follow} />;
 }
 export function Badge({ children, tone = 'neutral' }) { return <span className={`badge badge-${tone}`}>{children}</span>; }
+export function InfoDetails({ title = 'How this works', children }) {
+  return <details className="info-details"><summary>{title}</summary><div className="info-details-body">{children}</div></details>;
+}
 export function Empty({ icon: Icon = Users, title, text, action }) {
   return <div className="empty"><Icon size={30} /><h3>{title}</h3><p>{text}</p>{action}</div>;
 }

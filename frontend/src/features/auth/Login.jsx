@@ -73,8 +73,8 @@ export default function Login({ onLogin }) {
           <ErrorBox error={error} />
           <form className="access-form" onSubmit={submit} aria-busy={busy}>
             <div className="access-field">
-              <label htmlFor="access-email">Email address <span>*</span></label>
-              <div className="access-input"><Mail size={19} aria-hidden="true" /><input id="access-email" name="email" type="email" autoComplete="username" placeholder="you@cpstl.lk" value={email} onChange={event => setEmail(event.target.value)} required disabled={busy} spellCheck={false} autoCapitalize="none" /></div>
+              <label htmlFor="access-email">Email address / EPF number <span>*</span></label>
+              <div className="access-input"><Mail size={19} aria-hidden="true" /><input id="access-email" name="email" type="text" autoComplete="username" placeholder="EPF number or work email" value={email} onChange={event => setEmail(event.target.value)} required disabled={busy} spellCheck={false} autoCapitalize="none" /></div>
             </div>
             <div className="access-field">
               <label htmlFor="access-password">Password <span>*</span></label>

@@ -124,6 +124,7 @@ class DeliveryController extends Controller
             $activity = $context['activity'];
             $tasks = $this->currentTasks($assignment);
             $ready = $this->allocationReady($assignment);
+            $timeliness = app(TimelinessController::class)->forAssignment($assignment);
             $parent = [
                 'id' => (int) $assignment->id, 'version' => (int) $assignment->version, 'generation' => (int) $assignment->delivery_generation,
                 'owner_id' => (int) $assignment->owner_id, 'manager_id' => (int) $assignment->assignee_id,
@@ -131,6 +132,7 @@ class DeliveryController extends Controller
                 'activity_code' => $assignment->activity_code, 'kpa_title' => $activity['kpa_title'] ?? '', 'kpi_title' => $activity['kpi_title'] ?? '',
                 'year' => $activity['year'] ?? null, 'personal_weight' => $activity['personal_weight'] ?? 0,
                 'due_date' => $assignment->due_date ? substr((string) $assignment->due_date, 0, 10) : null,
+                'timeliness' => $context['valid'] ? $timeliness['summary'] : null,
                 'instructions' => $assignment->instructions, 'valid' => $context['valid'], 'allocation_ready' => $ready,
                 'confirmed_progress' => $context['valid'] && $ready ? (float) $assignment->confirmed_progress : 0,
                 'reported_progress' => (float) $assignment->reported_progress,
@@ -140,14 +142,16 @@ class DeliveryController extends Controller
             ];
             $allTasks = DB::table('delivery_tasks')->where('assignment_id', $assignment->id)
                 ->where('generation', $assignment->delivery_generation)->where('is_active', true)->orderBy('id')->get();
-            $serialized = $allTasks->map(function ($task) use ($assignment, $allTasks): array {
+            $serialized = $allTasks->map(function ($task) use ($assignment, $allTasks, $timeliness, $user): array {
                 $children = $allTasks->where('parent_task_id', $task->id)->values();
                 $selfConfirm = $this->selfConfirmable($task, $assignment);
 
                 return [...(array) $task, 'weight' => (float) $task->weight, 'reported_progress' => (float) $task->reported_progress,
                     'confirmed_progress' => (float) $task->confirmed_progress,
+                    'timeliness' => $timeliness['tasks'][$task->id] ?? null,
+                    'can_extend_deadline' => $children->isEmpty() && $task->status !== 'approved' && (((int) $task->reviewer_id === $user && (int) $task->assignee_id !== $user) || $selfConfirm && (int) $task->assignee_id === $user),
                     'self_confirm' => $selfConfirm, 'reviewer_id' => $selfConfirm ? null : (int) $task->reviewer_id,
-                    'children' => $children, 'has_children' => $children->isNotEmpty(),
+                    'children' => $children->map(fn ($child) => (object) [...(array) $child, 'timeliness' => $timeliness['tasks'][$child->id] ?? null]), 'has_children' => $children->isNotEmpty(),
                     'breakdown_locked' => (float) $task->reported_progress > 0
                         || DB::table('task_submissions')->whereIn('task_id', $children->pluck('id')->push($task->id))->exists(),
                     'due_date' => $task->due_date ? substr((string) $task->due_date, 0, 10) : null,
@@ -183,7 +187,11 @@ class DeliveryController extends Controller
         })->join('users as u', 'u.id', '=', 'r.user_id')->join('departments as d', 'd.id', '=', 'r.department_id')
             ->where('r.manager_id', $user)->whereIn('m.responsibility', ['hof', 'manager', 'employee'])->where('u.is_active', true)->where('u.system_role', 'member')->where('d.is_active', true)
             ->orderBy('u.name')->get(['u.id', 'u.name', 'u.employee_number', 'u.designation', 'r.department_id']);
-        $submissions = DB::table('task_submissions')->whereIn('task_id', array_unique($taskIds))->orderByDesc('id')->get();
+        $submissions = DB::table('task_submissions')->whereIn('task_id', array_unique($taskIds))->orderByDesc('id')->get()->map(function ($submission) {
+            $submission->retain_timeliness = (bool) $submission->retain_timeliness;
+
+            return $submission;
+        });
         $peopleIds = collect($managed)->flatMap(fn ($parent) => collect($parent['tasks'])->pluck('assignee_id')->push($parent['owner_id']))
             ->merge(collect($own)->pluck('reviewer_id'))->merge(collect($own)->pluck('manager_id'))
             ->merge(collect($reviews)->pluck('assignee_id'))->unique();
@@ -364,9 +372,13 @@ class DeliveryController extends Controller
             if ($selfConfirm) {
                 DB::table('task_submissions')->where('task_id', $task)->where('decision', 'pending')->update(['decision' => 'superseded']);
             }
+            $previous = DB::table('task_submissions')->where('task_id', $task)->orderByDesc('id')->first();
+            $basis = $previous && $previous->decision === 'needs_changes' && $previous->retain_timeliness
+                ? ($previous->timeliness_submitted_at ?? $previous->submitted_at) : now();
             $submissionId = DB::table('task_submissions')->insertGetId([
                 'task_id' => $task, 'submitted_by' => $request->user()->id, 'evidence' => $data['evidence'],
                 'evidence_url' => $data['evidence_url'] ?? null, 'submitted_at' => now(),
+                'timeliness_submitted_at' => $basis, 'timeliness_due_date' => app(TimelinessController::class)->effectiveDue($record, $assignment),
                 'decision' => $selfConfirm ? 'approved' : 'pending',
                 'reviewed_by' => null, 'reviewed_at' => $selfConfirm ? now() : null,
                 'review_note' => $selfConfirm ? 'Completion confirmed by the HOF.' : null,
@@ -390,7 +402,7 @@ class DeliveryController extends Controller
 
     public function review(Request $request, int $submission): JsonResponse
     {
-        $data = $request->validate(['version' => ['required', 'integer', 'min:1'], 'decision' => ['required', Rule::in(['approved', 'needs_changes'])], 'review_note' => ['required_if:decision,needs_changes', 'nullable', 'string', 'max:2000']]);
+        $data = $request->validate(['version' => ['required', 'integer', 'min:1'], 'decision' => ['required', Rule::in(['approved', 'needs_changes'])], 'review_note' => ['required_if:decision,needs_changes', 'nullable', 'string', 'max:2000'], 'correction_type' => ['sometimes', Rule::in(['incomplete', 'clarification'])]]);
         DB::transaction(function () use ($request, $data, $submission): void {
             $reference = DB::table('task_submissions')->find($submission);
             abort_unless($reference, 404);
@@ -399,7 +411,7 @@ class DeliveryController extends Controller
             abort_unless((int) $task->reviewer_id === $request->user()->id && (int) $task->assignee_id !== $request->user()->id, 403, 'Only the designated reviewer can review this work. Self-approval is not allowed.');
             $latest = DB::table('task_submissions')->where('task_id', $task->id)->orderByDesc('id')->first();
             abort_unless((int) $task->version === (int) $data['version'] && $task->status === 'submitted' && (int) $latest->id === $submission && $latest->decision === 'pending', 409, 'This submission has changed or has already been reviewed.');
-            DB::table('task_submissions')->where('id', $submission)->update(['decision' => $data['decision'], 'reviewed_by' => $request->user()->id, 'review_note' => $data['review_note'] ?? null, 'reviewed_at' => now()]);
+            DB::table('task_submissions')->where('id', $submission)->update(['decision' => $data['decision'], 'retain_timeliness' => $data['decision'] === 'needs_changes' && ($data['correction_type'] ?? 'incomplete') === 'clarification', 'reviewed_by' => $request->user()->id, 'review_note' => $data['review_note'] ?? null, 'reviewed_at' => now()]);
             DB::table('delivery_tasks')->where('id', $task->id)->update(['status' => $data['decision'], 'confirmed_progress' => $data['decision'] === 'approved' ? 100 : 0, 'version' => $task->version + 1, 'updated_at' => now()]);
             $this->rollup($assignment);
             $this->audit($request, 'task.reviewed', 'Task '.$task->id, ['submission_id' => $submission, ...$data]);
@@ -407,6 +419,30 @@ class DeliveryController extends Controller
         });
 
         return response()->json(['message' => 'Review decision saved.']);
+    }
+
+    public function extendDeadline(Request $request, int $task): JsonResponse
+    {
+        $data = $request->validate(['version' => ['required', 'integer', 'min:1'], 'due_date' => ['required', 'date_format:Y-m-d'], 'reason' => ['required', 'string', 'max:1000']]);
+        DB::transaction(function () use ($request, $task, $data): void {
+            [$record, $assignment] = $this->lockTask($task);
+            $selfConfirm = $this->selfConfirmable($record, $assignment);
+            abort_unless(((int) $record->reviewer_id === $request->user()->id && (int) $record->assignee_id !== $request->user()->id)
+                || ($selfConfirm && (int) $record->assignee_id === $request->user()->id), 403, 'Only the assigning reviewer can approve a deadline extension.');
+            abort_unless((int) $record->version === (int) $data['version'], 409, 'This task changed. Refresh before extending its deadline.');
+            abort_if($record->status === 'approved', 409, 'Completed work keeps its recorded deadline and timeliness.');
+            abort_if(DB::table('delivery_tasks')->where('parent_task_id', $task)->where('is_active', true)->exists(), 409, 'Extend deadlines on individual subtasks.');
+            $previous = app(TimelinessController::class)->effectiveDue($record, $assignment);
+            if (! $previous || $data['due_date'] <= $previous) {
+                throw ValidationException::withMessages(['due_date' => 'Choose a date later than the current deadline.']);
+            }
+            DB::table('delivery_tasks')->where('id', $task)->update(['due_date' => $data['due_date'], 'version' => $record->version + 1, 'updated_at' => now()]);
+            DB::table('task_submissions')->where('task_id', $task)->where('decision', 'pending')->update(['timeliness_due_date' => $data['due_date']]);
+            $this->audit($request, 'task.deadline_extended', 'Task '.$task, ['previous_due_date' => $previous, 'due_date' => $data['due_date'], 'reason' => $data['reason']]);
+            NotificationController::send((int) $record->assignee_id, 'deadline:'.$task.':'.$record->version, 'deadline', 'Deadline extended: '.$record->title, ['workspace' => 'delivery', 'page' => 'tasks', 'task_id' => $task]);
+        });
+
+        return response()->json(['message' => 'Deadline extension approved and recorded.']);
     }
 
     private function rollup(object $assignment): void

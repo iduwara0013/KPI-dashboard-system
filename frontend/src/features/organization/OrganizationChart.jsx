@@ -27,7 +27,7 @@ export default function OrganizationChart() {
   const links = (data?.links || []).filter(link => same(link.department_id, department));
   const person = people.find(item => same(item.id, selected));
   return <section className="panel org-chart">
-    <div className="panel-heading"><div><span className="eyebrow">PEOPLE & RESPONSIBILITIES</span><h2><Network size={19} /> How your team connects</h2><p>Actual reporting relationships · Select a person to see their designation and connections.</p></div></div>
+    <div className="panel-heading"><div><h2><Network size={19} /> Reporting connections</h2><p>Select a person to view their reporting details.</p></div></div>
     <ErrorBox error={error} />
     {error ? <button className="btn btn-secondary" onClick={load}>Retry</button> : !data ? <p className="org-loading">Loading reporting structure…</p> :
       !people.length ? <Empty icon={Network} title="Your reporting structure will appear here" text="An administrator can connect people using department responsibilities and reporting managers." /> : <>
@@ -43,7 +43,7 @@ export default function OrganizationChart() {
           <small><UserCheck size={14} /> Reports to: {links.filter(link => same(link.user_id, person.id)).map(link => people.find(item => same(item.id, link.manager_id))?.name).filter(Boolean).join(', ') || 'No reporting manager configured'}</small>
         </div></div>}
         {!person && <div className="org-selection-hint"><MousePointer2 size={17} /><span>Select a person to view their designation and reporting manager.</span></div>}
-        <div className="org-note">Titles describe designations. Access follows assigned system roles and department responsibilities. Only configured reporting links are drawn.</div>
+
       </>}
   </section>;
 }
@@ -122,7 +122,7 @@ export function ReportingGraph({ people, links, selected, onSelect, showUnassign
               style={{ left: positions[id].x, top: positions[id].y }}>
               <button className="org-person" title={`${person.name} — ${person.responsibility_title || person.designation || reportingRoles[person.responsibility]}`} aria-pressed={same(person.id, selected)} onClick={() => onSelect(person.id)}>
                 <Avatar name={person.name} small /><span>
-                  <small>{reportingRoles[person.responsibility]}{person.is_active === false && ' · Inactive'}{showUnassigned && !links.some(link => same(link.user_id, id)) && ' · Unassigned'}</small>
+                  <small>{reportingRoles[person.responsibility]}{person.is_active === false && ' · Inactive'}{showUnassigned && person.responsibility !== 'hof' && !links.some(link => same(link.user_id, id)) && ' · Unassigned'}</small>
                   <strong>{person.name}</strong><em>{person.responsibility_title || person.designation || 'Designation not set'}</em>
                 </span>
               </button>

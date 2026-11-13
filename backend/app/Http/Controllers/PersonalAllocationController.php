@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Http\Middleware\RequireDeliveryAccess;
+use App\Http\Middleware\RequirePlanningAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -16,7 +18,38 @@ class PersonalAllocationController extends Controller
         abort_unless($editor || ($request->user()?->is_active && $request->user()->id === $owner && RequireDeliveryAccess::roles($request->user()) !== []), 403);
         abort_unless(DB::table('users')->where('id', $owner)->where('is_active', true)->where('system_role', 'member')->exists(), 422, 'Choose an active team member.');
 
+        if ($editor) {
+            abort_unless($this->editorOwnerIds($request)->contains($owner), 403, 'This personal allocation includes departments outside your editor scope.');
+        }
+
         return $editor;
+    }
+
+    private function editorOwnerIds(Request $request): Collection
+    {
+        $departments = RequirePlanningAccess::departmentIds($request->user());
+
+        return RequirePlanningAccess::ownerIds($request->user())->filter(fn ($owner) => ! DB::table('department_memberships')
+            ->where('user_id', $owner)->whereNotIn('department_id', $departments)->exists())->values();
+    }
+
+    private function requireAllocationScope(Request $request, int $owner, int $year): void
+    {
+        if (! RequirePlanningAccess::canEdit($request->user())) {
+            return;
+        }
+        $departments = RequirePlanningAccess::departmentIds($request->user());
+        $entries = collect($this->sources($owner, $year));
+        $record = DB::table('personal_allocations')->where('owner_id', $owner)->where('year', $year)->first();
+        if ($record) {
+            $entries = $entries->concat(json_decode($record->draft_payload ?? '[]', true))
+                ->concat(json_decode($record->published_payload ?? '[]', true));
+            foreach (DB::table('personal_allocation_versions')->where('allocation_id', $record->id)->pluck('snapshot') as $snapshot) {
+                $entries = $entries->concat(json_decode($snapshot, true)['entries'] ?? []);
+            }
+        }
+        abort_unless($entries->every(fn ($entry) => isset($entry['department_id']) && $departments->contains((int) $entry['department_id'])), 403,
+            'This personal allocation includes work outside your editor scope.');
     }
 
     public function proposeWeight(int $actor, int $owner, string $key, float $weight): void
@@ -34,7 +67,7 @@ class PersonalAllocationController extends Controller
                 continue;
             }
             $covered[] = $kpi['plan_id'].':'.$kpi['kpi_code'];
-            $sources[] = $this->source('kpi:'.$kpi['delegation']->id.':'.$kpi['delegation']->generation, 'Linked KPA · delegated KPI', $kpi['kpi_title'], $kpi['department_id'], $kpi['valid'], $kpi['source_signature'], $kpi['confirmed_progress']);
+            $sources[] = $this->source('kpi:'.$kpi['delegation']->id.':'.$kpi['delegation']->generation, 'Linked KPA · delegated KPI', $kpi['kpi_title'], $kpi['department_id'], $kpi['valid'], $kpi['source_signature'], $kpi['confirmed_progress'], $kpi['timeliness'] ?? []);
             $sources[array_key_last($sources)]['contribution_weight'] = $kpi['personal_weight'];
         }
         foreach (DB::table('work_assignments')->where('assignee_id', $owner)->where('recipient_role', 'manager')->get() as $assignment) {
@@ -43,7 +76,7 @@ class PersonalAllocationController extends Controller
             if (! $row || $row['year'] !== $year || in_array($row['plan_id'].':'.$row['kpi_code'], $covered, true)) {
                 continue;
             }
-            $sources[] = $this->source('assignment:'.$assignment->id.':'.$assignment->delivery_generation, 'Assigned activity', $row['activity'], $row['department_id'], $context['valid'], $row['source_signature'], $context['valid'] ? (float) $assignment->confirmed_progress : 0);
+            $sources[] = $this->source('assignment:'.$assignment->id.':'.$assignment->delivery_generation, 'Assigned activity', $row['activity'], $row['department_id'], $context['valid'], $row['source_signature'], $context['valid'] ? (float) $assignment->confirmed_progress : 0, app(TimelinessController::class)->forAssignment($assignment)['summary']);
             $sources[array_key_last($sources)]['contribution_weight'] = $row['personal_weight'];
         }
         foreach (DB::table('delivery_tasks')->where('assignee_id', $owner)->where('is_active', true)->get() as $task) {
@@ -76,7 +109,7 @@ class PersonalAllocationController extends Controller
             }
             $valid = $context['valid'] && app(DeliveryController::class)->taskEligible($task, $assignment);
             $token = $row['source_signature'].':'.$task->title.':'.$task->weight.':'.$task->reviewer_id;
-            $sources[] = $this->source('task:'.$task->id.':'.$assignment->delivery_generation, $assignment->recipient_role === 'employee' ? 'Direct HOF work' : 'Employee task', $task->title, $row['department_id'], $valid, $token, $valid ? (float) $task->confirmed_progress : 0);
+            $sources[] = $this->source('task:'.$task->id.':'.$assignment->delivery_generation, $assignment->recipient_role === 'employee' ? 'Direct HOF work' : 'Employee task', $task->title, $row['department_id'], $valid, $token, $valid ? (float) $task->confirmed_progress : 0, app(TimelinessController::class)->forAssignment($assignment)['tasks'][$task->id] ?? []);
             $sources[array_key_last($sources)]['contribution_weight'] = $row['personal_weight'] * $contribution;
         }
         foreach (DB::table('performance_plans')->where('owner_id', $owner)->where('year', $year)->whereNotNull('published_revision')->get() as $plan) {
@@ -86,7 +119,7 @@ class PersonalAllocationController extends Controller
                 $active = DB::table('department_memberships as m')->join('departments as d', 'd.id', '=', 'm.department_id')->where('m.user_id', $owner)->where('m.department_id', $first['department_id'])->whereIn('m.responsibility', ['hof', 'manager', 'employee'])->where('d.is_active', true)->exists();
                 $progress = $group->sum(fn ($row) => $row['kpi_weight'] * $row['activity_weight'] * (($row['source_changed'] || ! $row['assignee_eligible']) ? 0 : (float) ($row['assignment']->confirmed_progress ?? 0)));
                 $kind = DB::table('department_memberships')->where('user_id', $owner)->where('department_id', $first['department_id'])->where('responsibility', 'hof')->exists() ? 'HOF responsibility' : 'Personal plan responsibility';
-                $source = $this->source('hof:'.$plan->id.':'.$first['kpa_code'], $kind, $first['kpa_title'], $first['department_id'], $active, json_encode($group->pluck('source_signature')->all()), $progress);
+                $source = $this->source('hof:'.$plan->id.':'.$first['kpa_code'], $kind, $first['kpa_title'], $first['department_id'], $active, json_encode($group->pluck('source_signature')->all()), $progress, app(TimelinessController::class)->combine($group->map(fn ($row) => ['weight' => $row['kpi_weight'] * $row['activity_weight'], 'timeliness' => ($row['source_changed'] || ! $row['assignee_eligible']) ? null : ($row['timeliness'] ?? null)])->all()));
                 $source['suggested_weight'] = $first['kpa_weight'];
                 $source['contribution_weight'] = $first['kpa_weight'];
                 $sources[] = $source;
@@ -103,10 +136,10 @@ class PersonalAllocationController extends Controller
         return $sources;
     }
 
-    private function source(string $key, string $kind, string $title, int $department, bool $valid, string $token, float $progress): array
+    private function source(string $key, string $kind, string $title, int $department, bool $valid, string $token, float $progress, array $timeliness = []): array
     {
         return ['key' => $key, 'kind' => $kind, 'title' => $title, 'department_id' => $department, 'valid' => $valid,
-            'token' => hash('sha256', $token), 'confirmed_progress' => $progress, 'suggested_weight' => null, 'contribution_weight' => 0];
+            'timeliness' => $timeliness, 'token' => hash('sha256', $token), 'confirmed_progress' => $progress, 'suggested_weight' => null, 'contribution_weight' => 0];
     }
 
     public function liveScore(int $owner, int $year): array
@@ -138,20 +171,22 @@ class PersonalAllocationController extends Controller
             $score += $entry['weight'] * $source['confirmed_progress'];
         }
 
-        return ['current' => true, 'confirmed_completion' => round($score, 4)];
+        return ['current' => true, 'confirmed_completion' => round($score, 4),
+            'timeliness' => app(TimelinessController::class)->combine(array_map(fn ($entry) => ['weight' => $entry['weight'], 'timeliness' => $map->get($entry['key'])['timeliness'] ?? null], $entries))];
     }
 
     public function workspace(Request $request): JsonResponse
     {
         $editor = $request->user()?->is_active && $request->user()->system_role === 'plan_editor';
         abort_unless($editor || RequireDeliveryAccess::roles($request->user()) !== [], 403);
+        $allowedOwners = $editor ? $this->editorOwnerIds($request) : collect([$request->user()->id]);
         $people = DB::table('users as u')->join('department_memberships as m', 'm.user_id', '=', 'u.id')->join('departments as d', 'd.id', '=', 'm.department_id')
-            ->where('u.is_active', true)->where('u.system_role', 'member')->where('d.is_active', true)
+            ->where('u.is_active', true)->where('u.system_role', 'member')->where('d.is_active', true)->whereIn('u.id', $allowedOwners)
             ->when(! $editor, fn ($query) => $query->where('u.id', $request->user()->id))->distinct()->orderBy('u.name')->get(['u.id', 'u.name', 'u.employee_number']);
 
         return response()->json(['can_publish' => $editor, 'people' => $people,
-            'plans' => DB::table('personal_allocations')->when(! $editor, fn ($query) => $query->where('owner_id', $request->user()->id))->orderByDesc('updated_at')->get(['id', 'owner_id', 'year', 'version', 'status', 'published_version']),
-            'departments' => DB::table('departments')->where('is_active', true)->get(['id', 'name', 'code']),
+            'plans' => DB::table('personal_allocations')->whereIn('owner_id', $allowedOwners)->when(! $editor, fn ($query) => $query->where('owner_id', $request->user()->id))->orderByDesc('updated_at')->get(['id', 'owner_id', 'year', 'version', 'status', 'published_version']),
+            'departments' => DB::table('departments')->where('is_active', true)->when($editor, fn ($query) => $query->whereIn('id', RequirePlanningAccess::departmentIds($request->user())))->get(['id', 'name', 'code']),
         ]);
     }
 
@@ -159,6 +194,7 @@ class PersonalAllocationController extends Controller
     {
         $editor = $this->authorize($request, $owner);
         abort_unless($year >= 2000 && $year <= 2100, 422);
+        $this->requireAllocationScope($request, $owner, $year);
         $sources = $this->sources($owner, $year);
         $record = DB::table('personal_allocations')->where('owner_id', $owner)->where('year', $year)->first();
         $draft = $record ? json_decode($record->draft_payload, true) : [];
@@ -182,6 +218,7 @@ class PersonalAllocationController extends Controller
         $data = $request->validate(['owner_id' => ['required', 'integer'], 'year' => ['required', 'integer', 'between:2000,2100'], 'version' => ['required', 'integer', 'min:0'],
             'entries' => ['required', 'array', 'min:1', 'max:1000'], 'entries.*.key' => ['required', 'string', 'max:120'], 'entries.*.token' => ['required', 'string', 'size:64'], 'entries.*.weight' => ['nullable', 'numeric', 'between:0,1']]);
         $editor = $this->authorize($request, (int) $data['owner_id']);
+        $this->requireAllocationScope($request, (int) $data['owner_id'], (int) $data['year']);
         DB::transaction(function () use ($request, $data, $editor): void {
             DB::table('users')->where('id', $data['owner_id'])->lockForUpdate()->first();
             $old = DB::table('personal_allocations')->where('owner_id', $data['owner_id'])->where('year', $data['year'])->lockForUpdate()->first();
@@ -228,6 +265,7 @@ class PersonalAllocationController extends Controller
             $record = DB::table('personal_allocations')->where('id', $allocation)->lockForUpdate()->first();
             abort_unless($record, 404);
             $this->authorize($request, (int) $record->owner_id);
+            $this->requireAllocationScope($request, (int) $record->owner_id, (int) $record->year);
             abort_unless((int) $record->version === (int) $data['version'] && $record->status !== 'published', 409, 'This allocation changed or is already published. Reload it.');
             $sources = $this->sources((int) $record->owner_id, (int) $record->year);
             $entries = $this->validatedEntries(json_decode($record->draft_payload, true), $sources);

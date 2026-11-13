@@ -14,7 +14,7 @@ test('login redesign: responsive layout, password visibility and real sign in', 
     }
     await page.screenshot({ path: `test-results/login-${viewport.width}.png`, fullPage: true });
   }
-  await page.getByLabel(/^Email address/).fill('emp007@example.test');
+  await page.getByLabel(/^Email address/).fill('EMP007');
   const password = page.getByLabel(/^Password/);
   await password.fill('Incorrect-password');
   await expect(password).toHaveAttribute('type', 'password');
@@ -24,7 +24,7 @@ test('login redesign: responsive layout, password visibility and real sign in', 
   await expect(password).toHaveAttribute('type', 'password');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('incorrect');
-  await expect(page.getByLabel(/^Email address/)).toHaveValue('emp007@example.test');
+  await expect(page.getByLabel(/^Email address/)).toHaveValue('EMP007');
   await password.fill('Pulse-Local-2026!');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('button', { name: 'Open navigation', exact: true }).click();

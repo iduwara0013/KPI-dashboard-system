@@ -13,7 +13,10 @@ class PerformancePlanningTest extends TestCase
 
     private function editor(): User
     {
-        return User::factory()->create(['system_role' => 'plan_editor', 'is_active' => true]);
+        $editor = User::factory()->create(['system_role' => 'plan_editor', 'is_active' => true]);
+        $this->grantPlanningDepartments($editor);
+
+        return $editor;
     }
 
     private function hof(array $codes = ['IT', 'DIG']): array
@@ -31,6 +34,8 @@ class PerformancePlanningTest extends TestCase
                 'created_at' => now(), 'updated_at' => now(),
             ]);
         }
+
+        User::where('system_role', 'plan_editor')->get()->each(fn ($editor) => $this->grantPlanningDepartments($editor));
 
         return [$user, $departments];
     }
@@ -287,7 +292,7 @@ class PerformancePlanningTest extends TestCase
         $this->putJson('/api/planning/plans/'.$id, $draft)->assertUnprocessable();
         $this->assertDatabaseCount('performance_plan_versions', 2);
         $draft['owner_id'] = $this->editor()->id;
-        $this->putJson('/api/planning/plans/'.$id, $draft)->assertUnprocessable();
+        $this->putJson('/api/planning/plans/'.$id, $draft)->assertForbidden();
     }
 
     public function test_non_hof_plan_owner_can_start_work_with_a_reporting_reviewer_and_cannot_self_approve(): void

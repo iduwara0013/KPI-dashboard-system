@@ -44,6 +44,8 @@ export default function SubmissionHistory({ rows, person, compact = false }) {
                 {row.submitted_by && <><Avatar name={person(row.submitted_by)} small /><strong>{person(row.submitted_by)}</strong><span className="history-meta-dot" /></>}
                 <span><Clock3 size={12} aria-hidden="true" />Submitted {dateLabel(row.submitted_at)}</span>
               </div>
+              {row.timeliness_submitted_at && <div className="history-submitter"><span>Timing date: {dateLabel(row.timeliness_submitted_at)}</span><span>Deadline: {row.timeliness_due_date?.slice(0, 10) || 'Not assigned'}</span></div>}
+              {row.decision === 'needs_changes' && <div className="history-submitter"><span>{row.retain_timeliness ? 'Clarification: original timing date retained' : 'Incomplete work: timing uses the next submission'}</span></div>}
               <section className="history-evidence"><h4><FileText size={14} aria-hidden="true" />Work delivered</h4><p>{row.evidence}</p></section>
               {link && <a className="history-evidence-link" href={link.href} target="_blank" rel="noopener noreferrer"><span className="history-link-icon"><Link2 size={17} aria-hidden="true" /></span><span><strong>Open supporting evidence</strong><small>{link.hostname}</small></span><ArrowUpRight size={17} aria-hidden="true" /><span className="history-screen-reader"> (opens in a new tab)</span></a>}
               {row.reviewed_by || row.review_note || row.decision === 'approved' ? <div className="history-review">
