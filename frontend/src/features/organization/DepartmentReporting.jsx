@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Network, Save } from 'lucide-react';
+import { ArrowLeft, Maximize2, Minimize2, MousePointer2, Network, Save } from 'lucide-react';
 import { request } from '../../services/api.js';
 import { Avatar, Empty, ErrorBox, Field } from '../../components/ui.jsx';
 import { ReportingGraph, reportingRoles } from './OrganizationChart.jsx';
 import OverallReporting from './OverallReporting.jsx';
+import './department-reporting.css';
 
 function wouldCreateCycle(links, managerId, userId) {
   const pending = [managerId];
@@ -27,7 +28,10 @@ export default function DepartmentReporting({ data, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const [memberQuery, setMemberQuery] = useState('');
   const editor = useRef(null);
+  const panel = useRef(null);
   const people = data.memberships.filter(membership => String(membership.department_id) === departmentId)
     .flatMap(membership => {
       const user = data.users.find(person => Number(person.id) === Number(membership.user_id));
@@ -51,6 +55,30 @@ export default function DepartmentReporting({ data, onSaved }) {
   const candidates = people.filter(item => item.id !== selected && (
     currentManagers.includes(item.id) || (item.is_active && ['hof', 'manager'].includes(item.responsibility))
   ));
+  const department = departments.find(item => String(item.id) === departmentId);
+  const matchingPeople = people.filter(item => item.id === selected || `${item.name} ${item.employee_number} ${item.designation}`.toLowerCase().includes(memberQuery.trim().toLowerCase()));
+
+  useEffect(() => {
+    if (!expanded) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement;
+    document.body.style.overflow = 'hidden';
+    panel.current?.querySelector('[data-editor-close]')?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [expanded]);
+
+  function keyboard(event) {
+    if (!expanded) return;
+    if (event.key === 'Escape') { event.preventDefault(); setExpanded(false); }
+    if (event.key !== 'Tab') return;
+    const focusable = [...panel.current.querySelectorAll('button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex="0"]')].filter(node => node.getClientRects().length);
+    const first = focusable[0], last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
 
   useEffect(() => {
     if (!dirty) return;
@@ -68,6 +96,8 @@ export default function DepartmentReporting({ data, onSaved }) {
     setSelected(null);
     setMessage('');
     setError(null);
+    setMemberQuery('');
+    setExpanded(value !== 'overall');
   }
 
   function updatePerson(changes) {
@@ -111,11 +141,11 @@ export default function DepartmentReporting({ data, onSaved }) {
     }
   }
 
-  return <section className="panel org-chart department-reporting">
+  return <section ref={panel} className={`panel org-chart department-reporting ${expanded ? 'reporting-expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-modal={expanded ? true : undefined} aria-label={expanded ? `${department?.name || 'Department'} reporting editor` : undefined} onKeyDown={keyboard}>
     <div className="panel-heading"><div>
-      <h2><Network size={19} /> Reporting structure</h2>
-      <p>{departmentId === 'overall' ? 'Chairman, Managing Director and departments' : 'Select a person to manage their reporting relationships.'}</p>
-    </div></div>
+      <h2><Network size={19} /> {departmentId === 'overall' ? 'Reporting structure' : department?.name}</h2>
+      <p>{departmentId === 'overall' ? 'Chairman, Managing Director and departments' : 'Select a person on the map to set their role and reporting manager.'}</p>
+    </div>{departmentId !== 'overall' && <button data-editor-close className="btn btn-secondary" onClick={() => setExpanded(value => !value)}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}{expanded ? 'Use compact view' : 'Expand editor'}</button>}</div>
     <ErrorBox error={error} />
     {message && <p className="org-note" role="status">{message}</p>}
     <div className="org-toolbar">
@@ -131,16 +161,23 @@ export default function DepartmentReporting({ data, onSaved }) {
     </div>
     {dirty && <p className="org-note" role="status">Unsaved changes for {pending.length} {pending.length === 1 ? 'person' : 'people'}. New lines are dashed. Save or discard to switch departments.</p>}
     {departmentId === 'overall' ? <OverallReporting data={data} departments={departments} onSelectDepartment={chooseDepartment} /> : <>
-    <button type="button" className="text-button company-back" disabled={dirty || busy} onClick={() => chooseDepartment('overall')}><ArrowLeft size={15} />Overall structure</button>
+    <div className="reporting-context-bar"><button type="button" className="text-button company-back" disabled={dirty || busy} onClick={() => chooseDepartment('overall')}><ArrowLeft size={15} />Overall structure</button><span><MousePointer2 size={15} />Select a card to edit · Changes save together</span></div>
     {!people.length ? <Empty icon={Network} title={departmentId ? 'No members in this department' : 'Choose an active department'} text="Department assignments are managed from People." /> : <>
+      <div className="reporting-layout">
+      <div className="reporting-map">
+        <ReportingGraph key={departmentId} people={people} links={links.filter(link => people.some(item => item.id === link.manager_id))} showUnassigned editableLayout layoutKey={departmentId}
+          selected={selected} onSelect={setSelected} />
+      </div>
       <div className="reporting-editor" ref={editor}>
+        <h3>Person & reporting</h3>
+        <Field label="Search department members"><input type="search" value={memberQuery} onChange={event => setMemberQuery(event.target.value)} placeholder="Name, EPF or designation" /></Field>
         <Field label="Find a department member">
           <select value={selected ?? ''} onChange={event => setSelected(event.target.value ? Number(event.target.value) : null)}>
             <option value="">Select a person</option>
-            {people.map(item => <option key={item.id} value={item.id}>{item.name}{item.employee_number ? ` · ${item.employee_number}` : ''}</option>)}
+            {matchingPeople.map(item => <option key={item.id} value={item.id}>{item.name}{item.employee_number ? ` · ${item.employee_number}` : ''}</option>)}
           </select>
         </Field>
-        {person && <div className="reporting-person">
+        {!person ? <div className="reporting-pick-hint"><MousePointer2 size={25} /><strong>Choose a person</strong><p>Click a card or find a department member above.</p></div> : <div className="reporting-person">
           <div className="org-details"><Avatar name={person.name} /><div>
             <strong>{person.name}</strong>
             <p>{[person.employee_number, person.responsibility_title || person.designation, reportingRoles[person.responsibility]].filter(Boolean).join(' · ')}</p>
@@ -171,8 +208,7 @@ export default function DepartmentReporting({ data, onSaved }) {
           </fieldset>
         </div>}
       </div>
-      <ReportingGraph key={departmentId} people={people} links={links.filter(link => people.some(item => item.id === link.manager_id))} showUnassigned
-        selected={selected} onSelect={id => { setSelected(id); editor.current?.scrollIntoView({ block: 'nearest' }); }} />
+      </div>
     </>}
     </>}
   </section>;

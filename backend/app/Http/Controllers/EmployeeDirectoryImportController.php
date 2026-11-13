@@ -13,7 +13,7 @@ class EmployeeDirectoryImportController extends Controller
 {
     /** Child records precede their referenced parents; infrastructure tables are excluded. */
     private const TABLES = [
-        'work_notifications', 'monthly_kpi_submissions', 'monthly_kpi_reviewers',
+        'work_notifications', 'monthly_kpi_submissions', 'monthly_kpi_reviewers', 'work_replacements', 'work_change_requests',
         'extra_work_versions', 'extra_work_submissions', 'extra_work_tasks', 'extra_work_assignments',
         'task_submissions', 'delivery_tasks', 'work_assignments', 'kpi_delegations',
         'personal_weight_proposals', 'personal_allocation_versions', 'personal_allocations',

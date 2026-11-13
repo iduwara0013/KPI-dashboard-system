@@ -277,6 +277,7 @@ class HofWorkController extends Controller
             abort_unless((int) $record->assignee_id === $request->user()->id && (int) $record->version === (int) $data['version'], 409, 'This assignment changed. Refresh before saving.');
             $activity = collect($this->activities($plan))->firstWhere('activity_code', $record->activity_code);
             $tasks = DB::table('delivery_tasks')->where('assignment_id', $assignment)->where('generation', $record->delivery_generation)->where('is_active', true)->get();
+            abort_if(DB::table('work_replacements')->whereIn('task_id', $tasks->pluck('id'))->exists(), 409, 'Open the individual task to report progress on its remaining original portion.');
             abort_if($tasks->count() > 1 || ($tasks->isNotEmpty() && ((int) $tasks->first()->assignee_id !== $request->user()->id || in_array($tasks->first()->status, ['submitted', 'approved'], true))), 409, 'Open the work breakdown to update its individual tasks.');
             abort_unless($activity && in_array($activity['department_id'], $departments, true) && $record->source_signature === $activity['source_signature'], 409, 'The published activity changed. Review its assignment before updating progress.');
             $attributes = ['reported_progress' => round((float) $data['reported_progress'], 2), 'progress_note' => $data['progress_note'], 'version' => $record->version + 1, 'updated_at' => now()];

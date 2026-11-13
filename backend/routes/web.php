@@ -14,6 +14,7 @@ use App\Http\Controllers\PerformancePlanController;
 use App\Http\Controllers\PersonalAllocationController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\TvDisplayController;
+use App\Http\Controllers\WorkChangeController;
 use App\Http\Middleware\EnforceExecutiveReadOnly;
 use App\Http\Middleware\EnsureWorkspaceIdentity;
 use App\Http\Middleware\NormalizeJsonIdentifiers;
@@ -45,6 +46,12 @@ Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecuti
     Route::post('/login', [SessionController::class, 'login'])->middleware('throttle:5,1');
     Route::post('/logout', [SessionController::class, 'logout'])->middleware('auth');
     Route::post('/password/change', [SessionController::class, 'changePassword'])->middleware(['auth', 'throttle:5,1']);
+    Route::middleware('auth')->prefix('work-changes')->group(function () {
+        Route::get('/workspace', [WorkChangeController::class, 'workspace']);
+        Route::post('/', [WorkChangeController::class, 'store'])->middleware('throttle:30,1');
+        Route::post('/{change}/decide', [WorkChangeController::class, 'decide'])->whereNumber('change')->middleware('throttle:30,1');
+        Route::post('/{change}/cancel', [WorkChangeController::class, 'cancel'])->whereNumber('change')->middleware('throttle:30,1');
+    });
     Route::middleware('auth')->prefix('allocations')->group(function () {
         Route::get('/workspace', [PersonalAllocationController::class, 'workspace']);
         Route::get('/people/{owner}/{year}', [PersonalAllocationController::class, 'show'])->whereNumber(['owner', 'year']);

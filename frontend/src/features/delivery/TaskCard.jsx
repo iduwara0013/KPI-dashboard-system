@@ -6,6 +6,7 @@ import { pct, editable } from './deliveryFormat.js';
 import './task-cards.css';
 
 export default function TaskCard({ task, reviewing, person, department, submissions, onAction, readOnly = false }) {
+  readOnly = readOnly || Number(task.replacement?.fraction || 0) >= 1;
   const confirmed = Number(Number(task.confirmed_progress || 0).toFixed(2));
   const due = task.timeliness?.due_date || task.due_date || task.parent.due_date;
   const todayParts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -30,6 +31,7 @@ export default function TaskCard({ task, reviewing, person, department, submissi
       {task.status === 'needs_changes' && submissions[0]?.review_note && <div className="task-card-feedback"><strong>Changes requested</strong><p>{submissions[0].review_note}</p></div>}
       {reviewing && submissions[0] && <div className="task-card-notes"><div><small>SUBMITTED EVIDENCE</small><p>{submissions[0].evidence}</p></div></div>}
       {task.has_children && <details className="task-card-children"><summary><Users size={16} />Work breakdown <span>{task.children.length} subtask{task.children.length === 1 ? '' : 's'}</span><ChevronRight size={16} /></summary><div>{task.children.map(child => <div className="task-card-child" key={child.id}><div><strong>{child.title}</strong><small>{person(child.assignee_id)}</small></div><span>{pct(child.weight)}<small>of this task</small></span><span>{Number(child.confirmed_progress)}%<small>confirmed</small></span></div>)}</div></details>}
+      {task.parent.used_for_replacement && <div className="task-replacement-note"><strong>Counted through approved replacement</strong>This work contributes to planned-work completion and is excluded from the separate extra-work score.</div>}{task.replacement && <div className="task-replacement-note"><strong>Approved replacement: {pct(task.replacement.fraction)}</strong>{task.replacement.extra_title} contributes to this task. {Number(task.replacement.fraction) < 1 ? 'Complete the remaining original portion separately.' : 'Complete and submit the extra work instead of this original task.'}</div>}
       <div className="task-card-footnote"><Target size={15} /><span><strong>{pct(task.weight)}</strong> of parent work</span></div>
     </div>
     <aside className="task-card-sidebar" aria-label={`Progress and actions for ${task.title}`}>

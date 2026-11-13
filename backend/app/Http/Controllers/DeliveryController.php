@@ -82,6 +82,15 @@ class DeliveryController extends Controller
                 ->where('generation', $assignment->delivery_generation)->where('is_active', true)->get()
                 ->contains(fn ($task) => ! $this->taskEligible($task, $assignment));
         }
+        if ($valid) {
+            $replacements = DB::table('work_replacements as r')->join('delivery_tasks as t', 't.id', '=', 'r.task_id')
+                ->where('t.assignment_id', $assignment->id)->where('t.generation', $assignment->delivery_generation)->where('t.is_active', true)->get(['r.extra_assignment_id', 't.assignee_id']);
+            $valid = ! $replacements->contains(function ($replacement): bool {
+                $extra = DB::table('extra_work_assignments')->find($replacement->extra_assignment_id);
+
+                return ! $extra || (int) $extra->assignee_id !== (int) $replacement->assignee_id || ! app(ExtraWorkController::class)->assignmentValid($extra);
+            });
+        }
 
         return ['activity' => $activity, 'valid' => (bool) $valid];
     }
@@ -146,12 +155,16 @@ class DeliveryController extends Controller
                 $children = $allTasks->where('parent_task_id', $task->id)->values();
                 $selfConfirm = $this->selfConfirmable($task, $assignment);
 
-                return [...(array) $task, 'weight' => (float) $task->weight, 'reported_progress' => (float) $task->reported_progress,
-                    'confirmed_progress' => (float) $task->confirmed_progress,
+                return [...(array) $task, 'weight' => (float) $task->weight, 'reported_progress' => app(WorkChangeController::class)->effectiveProgress($task, 'reported_progress'),
+                    'native_status' => $task->status, 'status' => app(WorkChangeController::class)->displayStatus($task),
+                    'native_confirmed_progress' => (float) $task->confirmed_progress,
+                    'native_reported_progress' => (float) $task->reported_progress,
+                    'confirmed_progress' => app(WorkChangeController::class)->effectiveProgress($task),
+                    'replacement' => app(WorkChangeController::class)->replacement((int) $task->id),
                     'timeliness' => $timeliness['tasks'][$task->id] ?? null,
-                    'can_extend_deadline' => $children->isEmpty() && $task->status !== 'approved' && (((int) $task->reviewer_id === $user && (int) $task->assignee_id !== $user) || $selfConfirm && (int) $task->assignee_id === $user),
+                    'can_extend_deadline' => ! app(WorkChangeController::class)->fullyReplaced((int) $task->id) && $children->isEmpty() && $task->status !== 'approved' && (((int) $task->reviewer_id === $user && (int) $task->assignee_id !== $user) || $selfConfirm && (int) $task->assignee_id === $user),
                     'self_confirm' => $selfConfirm, 'reviewer_id' => $selfConfirm ? null : (int) $task->reviewer_id,
-                    'children' => $children->map(fn ($child) => (object) [...(array) $child, 'timeliness' => $timeliness['tasks'][$child->id] ?? null]), 'has_children' => $children->isNotEmpty(),
+                    'children' => $children->map(fn ($child) => (object) [...(array) $child, 'confirmed_progress' => app(WorkChangeController::class)->effectiveProgress($child), 'timeliness' => $timeliness['tasks'][$child->id] ?? null]), 'has_children' => $children->isNotEmpty(),
                     'breakdown_locked' => (float) $task->reported_progress > 0
                         || DB::table('task_submissions')->whereIn('task_id', $children->pluck('id')->push($task->id))->exists(),
                     'due_date' => $task->due_date ? substr((string) $task->due_date, 0, 10) : null,
@@ -290,6 +303,7 @@ class DeliveryController extends Controller
             abort_if($branch && ((float) $branch->reported_progress > 0 || DB::table('task_submissions')->where('task_id', $branch->id)->exists()), 409, 'Work that has started cannot be divided again.');
             $existing = DB::table('delivery_tasks')->where('assignment_id', $assignment)->where('generation', $parent->delivery_generation)
                 ->where('is_active', true)->where('parent_task_id', $parentTask)->get()->keyBy('id');
+            abort_if(DB::table('work_replacements')->whereIn('task_id', $existing->keys()->when($parentTask !== null, fn ($ids) => $ids->push($parentTask)))->exists(), 409, 'Approved replacement work keeps its original task allocation and history.');
             abort_if(DB::table('delivery_tasks')->whereIn('parent_task_id', $existing->keys())->where('is_active', true)->exists(), 409, 'A team member has already divided this work. Update that branch directly.');
             abort_if($existing->contains(fn ($task) => (float) $task->reported_progress > 0) || DB::table('task_submissions')->whereIn('task_id', $existing->keys())->exists(), 409, 'The task breakdown is locked after work starts. Ask the HOF to review the assignment if its scope must change.');
             $seen = [];
@@ -329,7 +343,7 @@ class DeliveryController extends Controller
         return response()->json(['message' => 'Task breakdown saved.']);
     }
 
-    private function lockTask(int $taskId): array
+    public function lockTask(int $taskId): array
     {
         $reference = DB::table('delivery_tasks')->find($taskId);
         abort_unless($reference, 404);
@@ -338,6 +352,7 @@ class DeliveryController extends Controller
         abort_unless($task->is_active && (int) $task->generation === (int) $assignment->delivery_generation, 409, 'This task belongs to an earlier assignment cycle. Refresh your workspace.');
         abort_unless($this->allocationReady($assignment), 409, 'The manager must complete the 100% task allocation first.');
         abort_unless($this->taskEligible($task, $assignment), 409, 'The reporting relationship changed. Contact the person who assigned this work.');
+        abort_if(app(WorkChangeController::class)->fullyReplaced($taskId), 409, 'This original task was replaced. Complete the approved extra work instead.');
 
         return [$task, $assignment];
     }
@@ -445,7 +460,7 @@ class DeliveryController extends Controller
         return response()->json(['message' => 'Deadline extension approved and recorded.']);
     }
 
-    private function rollup(object $assignment): void
+    public function rollup(object $assignment): void
     {
         $allTasks = DB::table('delivery_tasks')->where('assignment_id', $assignment->id)
             ->where('generation', $assignment->delivery_generation)->where('is_active', true)->orderByDesc('id')->get();
@@ -456,8 +471,8 @@ class DeliveryController extends Controller
             }
             $ready = abs($children->sum('weight') - 1) < 0.00005
                 && ! $children->contains(fn ($child) => ! $this->taskEligible($child, $assignment));
-            $task->reported_progress = $ready ? round($children->sum(fn ($child) => (float) $child->weight * (float) $child->reported_progress), 2) : 0;
-            $task->confirmed_progress = $ready ? round($children->sum(fn ($child) => (float) $child->weight * (float) $child->confirmed_progress), 2) : 0;
+            $task->reported_progress = $ready ? round($children->sum(fn ($child) => (float) $child->weight * app(WorkChangeController::class)->effectiveProgress($child, 'reported_progress')), 2) : 0;
+            $task->confirmed_progress = $ready ? round($children->sum(fn ($child) => (float) $child->weight * app(WorkChangeController::class)->effectiveProgress($child)), 2) : 0;
             DB::table('delivery_tasks')->where('id', $task->id)->update([
                 'reported_progress' => $task->reported_progress, 'confirmed_progress' => $task->confirmed_progress,
                 'status' => $task->confirmed_progress === 100.0 ? 'approved' : 'in_progress',
@@ -467,8 +482,8 @@ class DeliveryController extends Controller
         $tasks = $this->currentTasks($assignment);
         $ready = $tasks->isNotEmpty() && abs($tasks->sum('weight') - 1) < 0.00005;
         DB::table('work_assignments')->where('id', $assignment->id)->update([
-            'reported_progress' => $ready ? round($tasks->sum(fn ($task) => (float) $task->weight * (float) $task->reported_progress), 2) : 0,
-            'confirmed_progress' => $ready ? round($tasks->sum(fn ($task) => (float) $task->weight * (float) $task->confirmed_progress), 2) : 0,
+            'reported_progress' => $ready ? round($tasks->sum(fn ($task) => (float) $task->weight * app(WorkChangeController::class)->effectiveProgress($task, 'reported_progress')), 2) : 0,
+            'confirmed_progress' => $ready ? round($tasks->sum(fn ($task) => (float) $task->weight * app(WorkChangeController::class)->effectiveProgress($task)), 2) : 0,
             'version' => $assignment->version + 1, 'updated_at' => now(),
         ]);
     }

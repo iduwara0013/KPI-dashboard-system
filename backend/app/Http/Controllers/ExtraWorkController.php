@@ -34,6 +34,18 @@ class ExtraWorkController extends Controller
         return $this->canAssign((int) $assignment->owner_id, (int) $assignment->assignee_id, (int) $assignment->department_id);
     }
 
+    public function assignmentValid(object $assignment): bool
+    {
+        $tasks = $this->tasks((int) $assignment->id);
+
+        return $this->valid($assignment) && ! $tasks->contains(fn ($task) => ! $this->eligible($task, $assignment, $tasks));
+    }
+
+    public function assignmentTiming(object $assignment): array
+    {
+        return $this->timing($assignment, $this->tasks((int) $assignment->id));
+    }
+
     private function eligible(object $task, object $assignment, Collection $tasks): bool
     {
         if (! $task->is_active || ! $this->valid($assignment)) {
@@ -84,6 +96,9 @@ class ExtraWorkController extends Controller
 
     private function ownedSources(int $user, object $assignment, Collection $tasks, array $timing): array
     {
+        if ($user === (int) $assignment->assignee_id && app(WorkChangeController::class)->reservedExtra((int) $assignment->id)) {
+            return [];
+        }
         $sources = [];
         $valid = ! $tasks->contains(fn ($record) => ! $this->eligible($record, $assignment, $tasks));
         foreach ($tasks->where('assignee_id', $user) as $task) {
@@ -164,6 +179,7 @@ class ExtraWorkController extends Controller
             $timing = $this->timing($assignment, $tasks);
             $valid = $this->valid($assignment) && ! $tasks->contains(fn ($task) => ! $this->eligible($task, $assignment, $tasks));
             $parent = [...(array) $assignment, 'activity' => $assignment->title, 'kpa_title' => 'Extra work', 'kpi_title' => '', 'activity_code' => 'EXTRA-'.$assignment->id,
+                'used_for_replacement' => app(WorkChangeController::class)->reservedExtra((int) $assignment->id),
                 'weight' => (float) $assignment->weight, 'confirmed_progress' => $valid ? (float) $assignment->confirmed_progress : 0,
                 'reported_progress' => (float) $assignment->reported_progress, 'valid' => $valid, 'timeliness' => $valid ? $timing['summary'] : null,
                 'can_view_history' => $readOnly || (int) $assignment->owner_id === (int) $user->id || (int) $assignment->assignee_id === (int) $user->id || $hofDepartments->contains($assignment->department_id),
@@ -269,6 +285,7 @@ class ExtraWorkController extends Controller
         $roots = $tasks->whereNull('parent_task_id');
         DB::table('extra_work_assignments')->where('id', $assignment->id)->update(['reported_progress' => round($roots->sum(fn ($task) => $task->weight * $task->reported_progress), 2),
             'confirmed_progress' => round($roots->sum(fn ($task) => $task->weight * $task->confirmed_progress), 2), 'version' => $assignment->version + 1, 'updated_at' => now()]);
+        DB::afterCommit(fn () => app(WorkChangeController::class)->refreshForExtra((int) $assignment->id));
     }
 
     public function progress(Request $request, int $task): JsonResponse

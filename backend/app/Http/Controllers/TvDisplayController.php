@@ -66,8 +66,8 @@ class TvDisplayController extends Controller
         $team = $members->map(function ($person) use ($tasks): array {
             $owned = $tasks->filter(fn ($task) => (int) $task->assignee_id === (int) $person['id'] && (int) $task->department_id === (int) $person['department_id']);
 
-            return [...$person, 'assigned_tasks' => $owned->count(), 'approved_tasks' => $owned->where('status', 'approved')->count(), 'pending_tasks' => $owned->where('status', 'submitted')->count(),
-                'overdue_tasks' => $owned->filter(fn ($task) => $task->status !== 'approved' && ($task->due_date ?: $task->parent_due) && substr((string) ($task->due_date ?: $task->parent_due), 0, 10) < now('Asia/Colombo')->toDateString())->count()];
+            return [...$person, 'assigned_tasks' => $owned->count(), 'approved_tasks' => $owned->filter(fn ($task) => app(WorkChangeController::class)->effectiveProgress($task) >= 100)->count(), 'pending_tasks' => $owned->where('status', 'submitted')->count(),
+                'overdue_tasks' => $owned->filter(fn ($task) => app(WorkChangeController::class)->overdue($task, (object) ['due_date' => $task->parent_due]))->count()];
         })->values();
 
         return response()->json([
@@ -130,7 +130,7 @@ class TvDisplayController extends Controller
                 }
                 $scoped = $tasks->whereIn('id', $branchIds);
                 $ready = $branch !== null || ($scoped->isNotEmpty() && abs($scoped->whereNull('parent_task_id')->sum('weight') - 1) < 0.00005);
-                $confirmed = $context['valid'] && $ready ? (float) ($branch?->confirmed_progress ?? $assignment->confirmed_progress) : 0;
+                $confirmed = $context['valid'] && $ready ? ($branch ? app(WorkChangeController::class)->effectiveProgress($branch) : (float) $assignment->confirmed_progress) : 0;
                 $due = $branch?->due_date ?? $assignment->due_date ?? $activity['due_date'];
                 $due = $due ? substr((string) $due, 0, 10) : null;
                 $rows[] = [
@@ -139,8 +139,8 @@ class TvDisplayController extends Controller
                     'kpi' => $activity['kpi_title'], 'activity' => $branch?->title ?? $activity['activity'],
                     'weight' => $weight, 'approved' => $confirmed,
                     'timeliness' => $context['valid'] && $ready ? ($branch ? (app(TimelinessController::class)->forAssignment($assignment)['tasks'][$branch->id] ?? null) : app(TimelinessController::class)->forAssignment($assignment)['summary']) : null,
-                    'reported' => (float) ($branch?->reported_progress ?? $assignment->reported_progress),
-                    'due_date' => $due, 'overdue' => $confirmed < 100 && $due && $due < now('Asia/Colombo')->toDateString(),
+                    'reported' => $branch ? app(WorkChangeController::class)->effectiveProgress($branch, 'reported_progress') : (float) $assignment->reported_progress,
+                    'due_date' => $due, 'overdue' => $context['valid'] && $ready ? $scoped->filter(fn ($task) => ! $tasks->contains('parent_task_id', $task->id))->contains(fn ($task) => app(WorkChangeController::class)->overdue($task, $assignment)) : ($confirmed < 100 && $due && $due < now('Asia/Colombo')->toDateString()),
                     'pending' => $context['valid'] && $ready ? $scoped->where('status', 'submitted')->count() : 0,
                     'needs_review' => ! $context['valid'] || ($scoped->isNotEmpty() && ! $ready), 'assigned' => true,
                 ];

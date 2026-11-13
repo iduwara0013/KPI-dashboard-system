@@ -103,6 +103,9 @@ class TimelinessController extends Controller
                 'status' => ! $due ? 'no_deadline' : ($approved ? 'approved' : ($task->status === 'submitted' ? 'awaiting_review' : 'provisional')),
                 'legacy' => $latest && $latest->timeliness_submitted_at === null,
             ];
+            if ($source === 'planned') {
+                $timings[$task->id] = app(WorkChangeController::class)->replacementTiming((int) $task->id, $timings[$task->id]);
+            }
         }
         $roots = $tasks->whereNull('parent_task_id');
 

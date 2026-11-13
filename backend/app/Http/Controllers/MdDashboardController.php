@@ -46,15 +46,15 @@ class MdDashboardController extends Controller
                     'assignee' => $assignment ? ($people[$assignment->assignee_id]->name ?? 'Previous owner') : null,
                     'timeliness' => $valid && $ready ? ($row['timeliness'] ?? null) : null,
                     'approved' => $approved, 'reported' => $assignment ? (float) $assignment->reported_progress : 0,
-                    'due_date' => $due, 'overdue' => $approved < 100 && $due && $due < now()->toDateString(),
+                    'due_date' => $due, 'overdue' => $ready && $valid ? $tasks->filter(fn ($task) => ! $tasks->contains('parent_task_id', $task->id))->contains(fn ($task) => app(WorkChangeController::class)->overdue($task, $assignment)) : ($approved < 100 && $due && $due < now()->toDateString()),
                     'pending' => $pending, 'needs_review' => (bool) ($assignment && (! $valid || ($tasks->isNotEmpty() && ! $ready))),
                     'tasks' => $tasks->map(fn ($task) => [
                         'timeliness' => $valid && $ready ? (app(TimelinessController::class)->forAssignment($assignment)['tasks'][$task->id] ?? null) : null,
                         'id' => $task->id, 'parent_task_id' => $task->parent_task_id, 'title' => $task->title,
                         'owner' => $people[$task->assignee_id]->name ?? 'Previous owner',
                         'reviewer' => app(DeliveryController::class)->selfConfirmable($task, $assignment) ? 'HOF confirmation' : ($people[$task->reviewer_id]->name ?? 'Previous reviewer'),
-                        'weight' => (float) $task->weight, 'activity_weight' => $this->activityWeight($task, $tasks->keyBy('id')), 'confirmed_progress' => (float) $task->confirmed_progress,
-                        'status' => $task->status, 'due_date' => $task->due_date ? substr((string) $task->due_date, 0, 10) : null,
+                        'weight' => (float) $task->weight, 'activity_weight' => $this->activityWeight($task, $tasks->keyBy('id')), 'confirmed_progress' => app(WorkChangeController::class)->effectiveProgress($task),
+                        'replacement' => app(WorkChangeController::class)->replacement((int) $task->id), 'status' => app(WorkChangeController::class)->displayStatus($task), 'due_date' => $task->due_date ? substr((string) $task->due_date, 0, 10) : null,
                     ])->all(),
                 ];
             }

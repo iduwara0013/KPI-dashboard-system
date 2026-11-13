@@ -65,6 +65,9 @@ class NotificationController extends Controller
             ->where(fn ($q) => $q->where('t.assignee_id', $user->id)->orWhere('t.reviewer_id', $user->id))
             ->select('t.*', 'a.due_date as parent_due')->get();
         foreach ($tasks as $task) {
+            if (app(WorkChangeController::class)->fullyReplaced((int) $task->id)) {
+                continue;
+            }
             $due = $task->due_date ?: $task->parent_due;
             if (! $due || substr((string) $due, 0, 10) > now('Asia/Colombo')->addDays(3)->toDateString()) {
                 continue;
@@ -117,7 +120,12 @@ class NotificationController extends Controller
         $available = ! empty($target['workspace']);
         $required = false;
         $state = 'Information';
-        if (($target['workspace'] ?? '') === 'extra' && ! empty($target['extra_task_id'])) {
+        if (! empty($target['work_change_id'])) {
+            $change = app(WorkChangeController::class)->notificationState((int) $target['work_change_id'], (int) $row->user_id);
+            $available = $change['available'];
+            $required = $change['required'];
+            $state = $change['state'];
+        } elseif (($target['workspace'] ?? '') === 'extra' && ! empty($target['extra_task_id'])) {
             $extra = app(ExtraWorkController::class)->notificationState((int) $target['extra_task_id'], (int) $row->user_id, ($target['page'] ?? '') === 'reviews', isset($target['extra_submission_id']) ? (int) $target['extra_submission_id'] : null);
             $available = $extra['available'];
             $required = $extra['required'];
@@ -141,7 +149,7 @@ class NotificationController extends Controller
                         && (empty($target['submission_id']) || (int) $target['submission_id'] === (int) $latest->id);
                     $target['submission_id'] = $target['submission_id'] ?? $latest?->id;
                 } else {
-                    $required = ! in_array($task->status, ['submitted', 'approved'], true);
+                    $required = ! in_array($task->status, ['submitted', 'approved'], true) && ! app(WorkChangeController::class)->fullyReplaced((int) $task->id);
                 }
             }
         } elseif (! empty($target['assignment_id'])) {

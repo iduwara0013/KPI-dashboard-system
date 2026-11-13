@@ -183,6 +183,7 @@ class PerformancePlanController extends Controller
         $record = $this->findAuthorized($request, $plan);
         $this->requireManagedPlan($request, $plan);
         $details = $this->deletionDetails($record);
+        abort_if(DB::table('work_change_requests')->whereIn('task_id', $details['task_ids'])->exists(), 409, 'This plan has work-change history and must be retained for audit review.');
 
         return response()->json([
             'plan' => ['id' => $plan, 'code' => $record->code, 'title' => $record->title, 'status' => $record->status],
@@ -233,6 +234,7 @@ class PerformancePlanController extends Controller
             abort_unless((int) $record->revision === (int) $data['revision'], 409,
                 'Someone changed this plan. Refresh the list before removing it.');
             $details = $this->deletionDetails($record);
+            abort_if(DB::table('work_change_requests')->whereIn('task_id', $details['task_ids'])->exists(), 409, 'This plan has work-change history and must be retained for audit review.');
             $hasWork = $details['counts']['assignments'] > 0 || $details['counts']['kpi_assignments'] > 0 || $details['counts']['monthly_results'] > 0;
             if ($record->published_revision !== null || $hasWork || isset($data['deletion_token'])) {
                 abort_unless(hash_equals($details['token'], $data['deletion_token'] ?? ''), 409,

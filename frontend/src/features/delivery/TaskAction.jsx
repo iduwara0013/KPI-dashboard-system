@@ -7,7 +7,7 @@ import SubmissionHistory from './SubmissionHistory.jsx';
 import './task-dialogs.css';
 
 export default function TaskAction({ kind, task, submissions, person, onClose, onSaved, apiBase = '/delivery' }) {
-  const [progress, setProgress] = useState(task.reported_progress), [note, setNote] = useState(''), [evidence, setEvidence] = useState(''), [url, setUrl] = useState(''), [decision, setDecision] = useState('approved');
+  const [progress, setProgress] = useState(task.native_reported_progress ?? task.reported_progress), [note, setNote] = useState(''), [evidence, setEvidence] = useState(''), [url, setUrl] = useState(''), [decision, setDecision] = useState('approved');
   const [correctionType, setCorrectionType] = useState('incomplete');
   const [deadline, setDeadline] = useState(task.timeliness?.due_date || task.due_date || task.parent?.due_date || '');
   const [error, setError] = useState(null), [busy, setBusy] = useState(false);
@@ -23,7 +23,7 @@ export default function TaskAction({ kind, task, submissions, person, onClose, o
   }
   const progressValue = Math.min(100, Math.max(0, Number(progress || 0)));
   return <form className="delivery-dialog-form" onSubmit={submit}>
-    <div className="modal-body delivery-action-body"><ErrorBox error={error} />
+    <div className="modal-body delivery-action-body"><ErrorBox error={error} />{task.replacement && <p className="form-note">This form records only the remaining original work. The approved extra-work contribution is calculated separately.</p>}
       <div className="delivery-action-context"><span><UserCheck size={16} /><span><small>{task.self_confirm ? 'COMPLETION APPROVAL' : 'REVIEWER'}</small><strong>{task.self_confirm ? 'HOF self confirmation' : person(task.reviewer_id)}</strong></span></span><span><Target size={16} /><span><small>PARENT WORK CONTRIBUTION</small><strong>{pct(task.weight)}</strong></span></span></div>
       {kind === 'deadline' ? <>
         <Field label="New deadline" required hint={`Current deadline: ${task.timeliness?.due_date || task.due_date || task.parent?.due_date || 'Not set'}`}><input type="date" required value={deadline} onChange={event => setDeadline(event.target.value)} /></Field>

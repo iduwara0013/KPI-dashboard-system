@@ -109,7 +109,7 @@ class PersonalAllocationController extends Controller
             }
             $valid = $context['valid'] && app(DeliveryController::class)->taskEligible($task, $assignment);
             $token = $row['source_signature'].':'.$task->title.':'.$task->weight.':'.$task->reviewer_id;
-            $sources[] = $this->source('task:'.$task->id.':'.$assignment->delivery_generation, $assignment->recipient_role === 'employee' ? 'Direct HOF work' : 'Employee task', $task->title, $row['department_id'], $valid, $token, $valid ? (float) $task->confirmed_progress : 0, app(TimelinessController::class)->forAssignment($assignment)['tasks'][$task->id] ?? []);
+            $sources[] = $this->source('task:'.$task->id.':'.$assignment->delivery_generation, $assignment->recipient_role === 'employee' ? 'Direct HOF work' : 'Employee task', $task->title, $row['department_id'], $valid, $token, $valid ? app(WorkChangeController::class)->effectiveProgress($task) : 0, app(TimelinessController::class)->forAssignment($assignment)['tasks'][$task->id] ?? []);
             $sources[array_key_last($sources)]['contribution_weight'] = $row['personal_weight'] * $contribution;
         }
         foreach (DB::table('performance_plans')->where('owner_id', $owner)->where('year', $year)->whereNotNull('published_revision')->get() as $plan) {
