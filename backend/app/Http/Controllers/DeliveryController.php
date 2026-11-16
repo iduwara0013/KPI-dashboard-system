@@ -140,6 +140,8 @@ class DeliveryController extends Controller
                 'owner_id' => (int) $assignment->owner_id, 'manager_id' => (int) $assignment->assignee_id,
                 'department_id' => (int) $assignment->department_id, 'activity' => $activity['activity'] ?? $assignment->activity_code,
                 'activity_code' => $assignment->activity_code, 'kpa_title' => $activity['kpa_title'] ?? '', 'kpi_title' => $activity['kpi_title'] ?? '',
+                'plan_id' => (int) $assignment->plan_id, 'kpa_code' => $activity['kpa_code'] ?? null, 'kpi_code' => $activity['kpi_code'] ?? null,
+                'activity_weight' => $activity['activity_weight'] ?? 0,
                 'year' => $activity['year'] ?? null, 'personal_weight' => $activity['personal_weight'] ?? 0,
                 'due_date' => $assignment->due_date ? substr((string) $assignment->due_date, 0, 10) : null,
                 'timeliness' => $context['valid'] ? $timeliness['summary'] : null,

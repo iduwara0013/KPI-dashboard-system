@@ -214,7 +214,11 @@ class DeliveryWorkflowTest extends TestCase
         foreach ([$this->editor, $this->user('SYS001')] as $user) {
             $this->actingAs($user)->getJson('/api/delivery/workspace')->assertForbidden();
         }
-        $this->actingAs($this->manager)->getJson('/api/delivery/workspace')->assertJsonCount(1, 'managed')->assertJsonCount(2, 'employees');
+        $this->actingAs($this->manager)->getJson('/api/delivery/workspace')->assertJsonCount(1, 'managed')->assertJsonCount(2, 'employees')
+            ->assertJsonPath('managed.0.plan_id', $this->plan)
+            ->assertJsonPath('managed.0.kpa_code', 'KPA-IT')
+            ->assertJsonPath('managed.0.kpi_code', 'KPI-IT')
+            ->assertJsonPath('managed.0.activity_weight', 0.25);
         $this->actingAs($this->user('EMP006'))->getJson('/api/delivery/workspace')->assertJsonCount(0, 'managed');
     }
 
@@ -232,7 +236,10 @@ class DeliveryWorkflowTest extends TestCase
         $this->assertDatabaseHas('delivery_tasks', ['id' => $tasks[0], 'reviewer_id' => $this->manager->id]);
         $this->assertDatabaseHas('delivery_tasks', ['id' => $tasks[2], 'reviewer_id' => $this->hof->id]);
         $this->getJson('/api/delivery/workspace')->assertJsonCount(1, 'tasks')->assertJsonPath('managed.0.allocation_ready', true);
-        $this->actingAs($this->employee)->getJson('/api/delivery/workspace')->assertJsonCount(1, 'tasks')->assertJsonCount(0, 'managed');
+        $this->actingAs($this->employee)->getJson('/api/delivery/workspace')->assertJsonCount(1, 'tasks')->assertJsonCount(0, 'managed')
+            ->assertJsonPath('tasks.0.parent.plan_id', $this->plan)
+            ->assertJsonPath('tasks.0.parent.kpa_title', 'Infrastructure')
+            ->assertJsonPath('tasks.0.parent.kpi_title', 'Project completion');
     }
 
     public function test_reported_progress_does_not_confirm_completion_and_locks_breakdown(): void

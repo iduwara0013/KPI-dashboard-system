@@ -1,4 +1,5 @@
 import Timeliness from '../../components/Timeliness.jsx';
+import WorkSource from './WorkSource.jsx';
 import { ArrowRight, Building2, CalendarDays, CheckCircle2, ChevronRight, ClipboardList, Clock3, Eye, Send, Target, User, UserCheck, Users } from 'lucide-react';
 import { InfoDetails } from '../../components/ui.jsx';
 import { Progress, TaskBadge } from './DeliveryUi.jsx';
@@ -21,7 +22,7 @@ export default function TaskCard({ task, reviewing, person, department, submissi
     <div className="task-card-content">
       <div className="task-card-topline"><span className="task-card-type"><ClipboardList size={15} /> TASK #{task.id}</span><TaskBadge task={task} /><span className="task-card-department"><Building2 size={14} />{department(task.parent.department_id)}</span></div>
       <h3>{task.title}</h3>
-      <div className="task-card-context"><span>Parent work</span><ChevronRight size={14} /><strong>{task.parent.activity}</strong></div>
+      <WorkSource row={task.parent} />
       <div className="task-card-facts">
         <div className="task-card-fact"><span className="task-card-fact-icon"><User size={18} /></span><div><small>Task owner</small><strong>{person(task.assignee_id)}</strong></div></div>
         <div className="task-card-fact"><span className="task-card-fact-icon"><UserCheck size={18} /></span><div><small>{task.self_confirm ? 'Completion approval' : 'Reviewer'}</small><strong>{task.self_confirm ? 'HOF self confirmation' : person(task.reviewer_id)}</strong></div></div>
