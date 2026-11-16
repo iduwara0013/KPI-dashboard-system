@@ -256,7 +256,7 @@ class MixedAssignmentsTest extends TestCase
         $this->actingAs($this->employee)->getJson('/api/delivery/workspace')->assertJsonCount(2, 'tasks')->assertJsonCount(1, 'delegated_kpis')->assertJsonCount(0, 'managed');
         $this->assertCount(1, $this->allocation($this->employee)['entries']);
         $assignment = DB::table('work_assignments')->first();
-        $this->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version, 'tasks' => [['title' => 'My delivery work', 'assignee_id' => $this->employee->id, 'weight' => 1]]])->assertOk();
+        $this->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version, 'tasks' => [['title' => 'My delivery work', 'assignee_id' => $this->employee->id, 'weight' => 1]]])->assertForbidden();
     }
 
     public function test_hof_can_confirm_a_pending_submission_created_under_the_old_reviewer_flow(): void

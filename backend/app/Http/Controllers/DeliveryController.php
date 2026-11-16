@@ -13,6 +13,11 @@ use Illuminate\Validation\ValidationException;
 
 class DeliveryController extends Controller
 {
+    public function canDivide(int $user, int $department): bool
+    {
+        return $this->membership($user, $department, 'manager') || $this->membership($user, $department, 'hof');
+    }
+
     private function membership(int $user, int $department, string $role): bool
     {
         return DB::table('department_memberships as m')->join('users as u', 'u.id', '=', 'm.user_id')
@@ -164,6 +169,7 @@ class DeliveryController extends Controller
                 $selfConfirm = $this->selfConfirmable($task, $assignment);
 
                 return [...(array) $task, 'weight' => (float) $task->weight, 'reported_progress' => app(WorkChangeController::class)->effectiveProgress($task, 'reported_progress'),
+                    'can_divide' => $this->canDivide($user, (int) $assignment->department_id),
                     'native_status' => $task->status, 'status' => app(WorkChangeController::class)->displayStatus($task),
                     'native_confirmed_progress' => (float) $task->confirmed_progress,
                     'native_reported_progress' => (float) $task->reported_progress,
@@ -213,7 +219,8 @@ class DeliveryController extends Controller
                                 || DB::table('kpi_handoff_activities')->whereIn('task_id', $children->pluck('id'))->exists()
                                 || DB::table('task_submissions')->whereIn('task_id', $children->pluck('id'))->exists()];
                         $taskIds = [...$taskIds, ...$children->pluck('id')->all()];
-                        if (! $handoffTasks->has($task['id'])) {
+                        if (! $handoffTasks->has($task['id']) && ! $task['has_children']
+                            && ((float) $task['reported_progress'] > 0 || DB::table('task_submissions')->where('task_id', $task['id'])->exists())) {
                             $own[] = [...$task, 'parent' => $parent];
                         }
                     } else {
@@ -332,7 +339,7 @@ class DeliveryController extends Controller
             $branch = $parentTask ? DB::table('delivery_tasks')->where('id', $parentTask)->lockForUpdate()->first() : null;
             abort_unless(! $parentTask || ($branch && $this->taskEligible($branch, $parent)), 409, 'This task is no longer current.');
             $responsible = (int) ($branch?->assignee_id ?? $parent->assignee_id);
-            abort_unless($responsible === $request->user()->id || RequirePlanningAccess::canManageWork($request->user(), (int) $parent->plan_id, (int) $parent->department_id), 403, 'Only the responsible person or a department plan editor can divide this work.');
+            abort_unless(($responsible === $request->user()->id && $this->canDivide($responsible, (int) $parent->department_id)) || RequirePlanningAccess::canManageWork($request->user(), (int) $parent->plan_id, (int) $parent->department_id), 403, 'Only the responsible manager, HOF or authorized department plan editor can divide this work.');
             $actor = $responsible;
             abort_unless((int) ($branch?->version ?? $parent->version) === (int) $data['version'], 409, 'This work changed. Refresh before saving.');
             abort_if($branch && ((float) $branch->reported_progress > 0 || DB::table('task_submissions')->where('task_id', $branch->id)->exists()), 409, 'Work that has started cannot be divided again.');

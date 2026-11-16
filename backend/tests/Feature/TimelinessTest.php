@@ -150,6 +150,7 @@ class TimelinessTest extends TestCase
 
     public function test_nested_subordinates_roll_up_with_their_actual_weights_and_inherited_deadline(): void
     {
+        DB::table('department_memberships')->where('user_id', $this->employee->id)->where('department_id', DB::table('departments')->where('code', 'IT')->value('id'))->update(['responsibility' => 'manager']);
         $department = DB::table('departments')->where('code', 'IT')->value('id');
         $junior = User::factory()->create(['system_role' => 'member', 'is_active' => true]);
         DB::table('department_memberships')->insert(['user_id' => $junior->id, 'department_id' => $department, 'responsibility' => 'employee']);

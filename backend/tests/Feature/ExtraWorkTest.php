@@ -49,6 +49,16 @@ class ExtraWorkTest extends TestCase
         return DB::table('extra_work_tasks')->where('assignment_id', $assignment)->whereNull('parent_task_id')->first();
     }
 
+    public function test_employee_cannot_divide_extra_work(): void
+    {
+        $assignment = $this->assign($this->manager, $this->employee);
+        $task = $this->task($assignment);
+        $this->actingAs($this->employee)->getJson('/api/extra-work/workspace')->assertOk()->assertJsonPath('tasks.0.can_divide', false);
+        $this->putJson('/api/extra-work/tasks/'.$task->id.'/tasks', ['version' => 1,
+            'tasks' => [['title' => 'Unauthorized extra split', 'assignee_id' => $this->employee->id, 'weight' => 1]]])->assertForbidden();
+        $this->assertDatabaseMissing('extra_work_tasks', ['title' => 'Unauthorized extra split']);
+    }
+
     private function submit(User $actor, int $task): int
     {
         $this->actingAs($actor)->postJson('/api/extra-work/tasks/'.$task.'/submit', ['version' => DB::table('extra_work_tasks')->where('id', $task)->value('version'), 'evidence' => 'Completed and verified the work.', 'evidence_url' => 'https://example.test/result'])->assertOk();

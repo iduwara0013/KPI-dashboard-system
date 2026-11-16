@@ -57,7 +57,7 @@ export default function ExtraWorkWorkspace({ session, plannedHref, notificationT
     try { const result = await request(`/extra-work/assignments/${row.id}/history`); setModal({ kind: 'versions', row, versions: result.versions }); }
     catch (err) { setError(err); }
   }
-  function action(kind, task) { setModal(kind === 'breakdown' ? { kind, parent: { ...task.parent, id: task.id, version: task.version, activity: task.title, tasks: task.children, task_branch: true, breakdown_locked: task.breakdown_locked } } : { kind, task }); }
+  function action(kind, task) { setModal(kind === 'breakdown' ? { kind, parent: { ...task.parent, id: task.id, version: task.version, activity: task.title, tasks: task.children, task_branch: true, breakdown_locked: task.breakdown_locked || !task.can_divide } } : { kind, task }); }
   return <div className="extra-work-workspace">
     <div className="page-heading page-heading-compact"><h1>{title}</h1><div className="heading-actions"><button className="btn btn-secondary" disabled={loading} onClick={refresh}><RefreshCw size={16} />Refresh</button>{data.can_assign && <button className="btn btn-primary" onClick={() => setModal({ kind: 'assign' })}><Plus size={17} />Assign extra work</button>}</div></div>
     <nav className="workspace-section-tabs" aria-label="Work category"><RouteLink href={plannedHref}>Planned work</RouteLink><span className="is-active" aria-current="page">Extra work</span></nav>

@@ -79,6 +79,7 @@ class DeliveryWorkflowTest extends TestCase
 
     public function test_editor_can_delete_a_published_plan_with_linked_work_after_confirming_current_details(): void
     {
+        DB::table('department_memberships')->where('user_id', $this->employee->id)->where('department_id', DB::table('work_assignments')->where('id', $this->assignment)->value('department_id'))->update(['responsibility' => 'manager']);
         [$parent] = $this->allocate();
         $this->actingAs($this->employee)->putJson('/api/delivery/tasks/'.$parent.'/tasks', [
             'version' => 1, 'tasks' => [['title' => 'Detailed installation', 'assignee_id' => $this->employee->id, 'weight' => 1]],
@@ -133,6 +134,7 @@ class DeliveryWorkflowTest extends TestCase
 
     public function test_reporting_tree_weights_roll_up_and_personal_performance_rebalances(): void
     {
+        DB::table('department_memberships')->where('user_id', $this->employee->id)->where('department_id', DB::table('work_assignments')->where('id', $this->assignment)->value('department_id'))->update(['responsibility' => 'manager']);
         $department = DB::table('work_assignments')->where('id', $this->assignment)->value('department_id');
         $junior = User::factory()->create(['system_role' => 'member', 'is_active' => true]);
         DB::table('department_memberships')->insert(['user_id' => $junior->id, 'department_id' => $department, 'responsibility' => 'employee']);
@@ -240,6 +242,18 @@ class DeliveryWorkflowTest extends TestCase
             ->assertJsonPath('tasks.0.parent.plan_id', $this->plan)
             ->assertJsonPath('tasks.0.parent.kpa_title', 'Infrastructure')
             ->assertJsonPath('tasks.0.parent.kpi_title', 'Project completion');
+    }
+
+    public function test_employee_cannot_divide_tasks_even_with_manager_access_in_another_department(): void
+    {
+        [$task] = $this->allocate();
+        $this->actingAs($this->employee)->getJson('/api/delivery/workspace')->assertOk()->assertJsonPath('tasks.0.can_divide', false);
+        $body = ['version' => 1, 'tasks' => [['title' => 'Unauthorized split', 'assignee_id' => $this->employee->id, 'weight' => 1]]];
+        $this->putJson('/api/delivery/tasks/'.$task.'/tasks', $body)->assertForbidden();
+        $department = DB::table('departments')->where('code', 'FIN')->value('id');
+        DB::table('department_memberships')->updateOrInsert(['user_id' => $this->employee->id, 'department_id' => $department], ['responsibility' => 'manager']);
+        $this->putJson('/api/delivery/tasks/'.$task.'/tasks', $body)->assertForbidden();
+        $this->assertDatabaseMissing('delivery_tasks', ['title' => 'Unauthorized split']);
     }
 
     public function test_reported_progress_does_not_confirm_completion_and_locks_breakdown(): void

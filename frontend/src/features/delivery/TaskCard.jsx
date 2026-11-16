@@ -40,7 +40,7 @@ export default function TaskCard({ task, reviewing, person, department, submissi
       <Timeliness value={task.timeliness} /><div className="task-card-actions">
         {task.can_extend_deadline && <button className="btn btn-secondary" onClick={() => onAction('deadline')}>Extend deadline<CalendarDays size={15} /></button>}
         {reviewing ? <button className="btn btn-primary" onClick={() => onAction('review')}>Review submission<ArrowRight size={16} /></button> : !readOnly && editable(task) && <><button className="btn btn-primary" onClick={() => onAction('submit')}><Send size={16} />{task.self_confirm ? 'Confirm completion' : 'Submit completed work'}</button><button className="btn btn-secondary" onClick={() => onAction('progress')}>Update progress<ArrowRight size={15} /></button></>}
-        {!reviewing && !readOnly && <button className="btn btn-secondary" disabled={!task.has_children && task.breakdown_locked} onClick={() => onAction('breakdown')}><Users size={16} />{task.has_children ? 'View work breakdown' : 'Divide work'}</button>}
+        {!reviewing && !readOnly && (task.has_children || task.can_divide) && <button className="btn btn-secondary" disabled={!task.has_children && task.breakdown_locked} onClick={() => onAction('breakdown')}><Users size={16} />{task.has_children ? 'View work breakdown' : 'Divide work'}</button>}
         <button className="text-button task-card-history" onClick={() => onAction('history')}><Eye size={16} />Evidence & review history</button>
       </div>
     </aside>

@@ -149,6 +149,29 @@ class KpiHandoffTest extends TestCase
         $this->assertSame(2, DB::table('work_assignments')->where('delegation_id', $this->delegation)->whereDate('due_date', '2027-12-01')->count());
     }
 
+    public function test_one_activity_can_be_retained_and_another_passed_through_reporting_managers(): void
+    {
+        foreach (['INSTALL' => $this->manager, 'DOCUMENT' => $this->next] as $code => $owner) {
+            $assignment = DB::table('work_assignments')->where('activity_code', $code)->first();
+            $title = $code === 'INSTALL' ? 'Install equipment' : 'Document delivery';
+            $this->actingAs($this->manager)->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version,
+                'tasks' => [['title' => $title, 'assignee_id' => $owner->id, 'weight' => 1]]])->assertOk();
+        }
+        $received = $this->actingAs($this->next)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'managed')->assertJsonCount(0, 'tasks')->assertJsonCount(0, 'delegated_kpis')->json('managed.0');
+        $this->assertSame('IT delivery', $received['kpa_title']);
+        $this->assertSame('Network improvement', $received['kpi_title']);
+        $this->assertNull($received['linked_kpa_key']);
+        $this->putJson('/api/delivery/tasks/'.$received['id'].'/tasks', ['version' => $received['version'],
+            'tasks' => [['title' => $received['activity'], 'assignee_id' => $this->third->id, 'weight' => 1]]])->assertOk();
+        $this->actingAs($this->third)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'managed')
+            ->assertJsonCount(0, 'tasks')->assertJsonPath('managed.0.activity', 'Document delivery')->assertJsonPath('managed.0.kpa_title', 'IT delivery');
+        $scope = $this->getJson('/api/delivery/workspace')->json('managed.0');
+        $this->putJson('/api/delivery/tasks/'.$scope['id'].'/tasks', ['version' => $scope['version'],
+            'tasks' => [['title' => $scope['activity'], 'assignee_id' => $this->third->id, 'weight' => 1]]])->assertOk();
+        $this->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'tasks')->assertJsonPath('tasks.0.assignee_id', $this->third->id);
+        $this->assertDatabaseHas('delivery_tasks', ['title' => 'Install equipment', 'assignee_id' => $this->manager->id, 'is_active' => true]);
+    }
+
     public function test_individual_activity_overrides_must_be_reviewed_before_forwarding_full_kpi(): void
     {
         $assignment = DB::table('work_assignments')->where('activity_code', 'INSTALL')->first();

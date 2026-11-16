@@ -193,6 +193,7 @@ class ExtraWorkController extends Controller
                 $serialized = [...(array) $task, 'weight' => (float) $task->weight, 'confirmed_progress' => $valid ? (float) $task->confirmed_progress : 0,
                     'reported_progress' => (float) $task->reported_progress, 'self_confirm' => $selfConfirm,
                     'reviewer_id' => $selfConfirm ? null : (int) $task->reviewer_id, 'parent' => $parent, 'has_children' => $children->isNotEmpty(), 'children' => $children,
+                    'can_divide' => app(DeliveryController::class)->canDivide((int) $user->id, (int) $assignment->department_id),
                     'timeliness' => $valid ? ($timing['tasks'][$task->id] ?? null) : null, 'assignee_eligible' => $valid,
                     'breakdown_locked' => (float) $task->reported_progress > 0 || DB::table('extra_work_submissions')->where('task_id', $task->id)->exists(),
                     'can_extend_deadline' => $valid && ! $readOnly && $children->isEmpty() && $task->status !== 'approved' && (((int) $task->reviewer_id === (int) $user->id && (int) $task->assignee_id !== (int) $user->id) || $selfConfirm && (int) $task->assignee_id === (int) $user->id)];
@@ -362,6 +363,7 @@ class ExtraWorkController extends Controller
         DB::transaction(function () use ($request, $task, $data, $weights): void {
             [$parent, $assignment, $all] = $this->lockTask($request, $task);
             abort_unless((int) $parent->assignee_id === $request->user()->id, 403);
+            abort_unless(app(DeliveryController::class)->canDivide($request->user()->id, (int) $assignment->department_id), 403, 'Only managers and HOFs can divide work.');
             $this->checkVersion($parent, $data);
             $descendants = collect([$task]);
             foreach ($all as $record) {
