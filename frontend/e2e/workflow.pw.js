@@ -374,6 +374,7 @@ test('overall company reporting opens departments and preserves save and discard
   expect((await structureEditor.locator('.org-canvas').boundingBox()).height).toBeGreaterThan(500);
   await expect(admin.page.locator('.org-scene')).toBeVisible();
   await expect(admin.page.getByText('Mr. D J A S De S. Rajakaruna', { exact: true })).toHaveCount(0);
+  await structureEditor.getByRole('button', { name: 'Find person', exact: true }).click();
   await admin.page.getByRole('combobox', { name: 'Find a department member', exact: true }).selectOption(String(org.users.find(person => person.employee_number === 'EMP008').id));
   const hofReporting = admin.page.getByRole('checkbox', { name: 'Nimal Perera', exact: true });
   await hofReporting.check();
@@ -397,6 +398,7 @@ test('overall company reporting opens departments and preserves save and discard
   await admin.page.getByRole('button', { name: 'Overall structure', exact: true }).click();
   await expect(admin.page.getByText('Mr. D J A S De S. Rajakaruna', { exact: true })).toBeVisible();
   await admin.page.getByRole('combobox', { name: 'Department', exact: true }).selectOption(String(department));
+  await admin.page.getByRole('button', { name: 'Find person', exact: true }).click();
   await expect(admin.page.getByRole('combobox', { name: 'Find a department member', exact: true })).toBeVisible();
   await admin.context.close();
 });
@@ -411,6 +413,10 @@ test('expanded structure editor handles 40 unlinked people, search and draft-pre
   const editor = admin.page.getByRole('dialog', { name: 'Editor Test Department reporting editor', exact: true });
   await expect(editor.locator('.org-node')).toHaveCount(40);
   await expect.poll(() => editor.locator('.org-node').evaluateAll(nodes => new Set(nodes.map(node => node.style.left)).size)).toBeGreaterThan(1);
+  await expect(editor.locator('.reporting-editor')).toBeHidden();
+  const mapWidth = (await editor.locator('.org-canvas').boundingBox()).width;
+  await editor.getByRole('button', { name: 'Find person', exact: true }).click();
+  expect((await editor.locator('.org-canvas').boundingBox()).width).toBeLessThan(mapWidth);
   await editor.getByLabel('Search department members', { exact: true }).fill('ED-1');
   await editor.getByRole('combobox', { name: 'Find a department member', exact: true }).selectOption(String(people[0].id));
   await editor.getByLabel('Workflow access').selectOption('hof');
@@ -448,18 +454,35 @@ test('reporting cards drag at zoom, retain browser layout and never change repor
   const position = () => node.evaluate(element => ({ x: parseFloat(element.style.left), y: parseFloat(element.style.top) }));
   const grip = editor.getByRole('button', { name: `Move ${person.name}`, exact: true });
   await expect(grip).toBeVisible();
+  const settle = () => node.evaluate(async element => {
+    let previous = '', steady = 0;
+    for (let frame = 0; frame < 60 && steady < 4; frame++) {
+      await new Promise(requestAnimationFrame);
+      const value = element.style.cssText + element.offsetHeight;
+      steady = value === previous ? steady + 1 : 0;
+      previous = value;
+    }
+  });
+  await settle();
   const before = await position();
+  const nodes = await editor.locator('[data-person-id]').evaluateAll(elements => Object.fromEntries(elements.map(element => [element.dataset.personId, { y: parseFloat(element.style.top), height: element.offsetHeight }])));
+  for (const link of org.reporting.filter(link => link.department_id === department)) {
+    expect(nodes[link.user_id].y).toBeGreaterThan(nodes[link.manager_id].y + nodes[link.manager_id].height);
+  }
   const oldPaths = await editor.locator('.org-scene svg > path').evaluateAll(paths => paths.map(path => path.getAttribute('d')));
   await editor.getByRole('button', { name: 'Zoom out chart', exact: true }).click();
   await editor.getByRole('button', { name: 'Zoom out chart', exact: true }).click();
+  await settle();
+  const dragOrigin = await position();
   const box = await grip.boundingBox();
   await admin.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await admin.page.mouse.down();
   await admin.page.mouse.move(box.x + box.width / 2 + 48, box.y + box.height / 2 + 80, { steps: 12 });
   await admin.page.mouse.up();
   const moved = await position();
-  expect(moved.x - before.x).toBeCloseTo(60, 0);
-  expect(moved.y - before.y).toBeCloseTo(100, 0);
+  // Browser pointer coordinates round to pixels at fractional zoom.
+  expect(Math.abs(moved.x - dragOrigin.x - 60)).toBeLessThanOrEqual(2);
+  expect(Math.abs(moved.y - dragOrigin.y - 100)).toBeLessThanOrEqual(2);
   await expect(editor.getByText('Layout saved in this browser', { exact: true })).toBeVisible();
   expect(await editor.locator('.org-scene svg > path').evaluateAll(paths => paths.map(path => path.getAttribute('d')))).not.toEqual(oldPaths);
   await expect(editor.getByRole('button', { name: 'Save changes', exact: true })).toHaveCount(0);
@@ -477,6 +500,20 @@ test('reporting cards drag at zoom, retain browser layout and never change repor
   await editor.getByRole('button', { name: 'Auto arrange', exact: true }).click();
   await expect.poll(position).toEqual(before);
   await expect(editor.getByText('Automatic layout restored', { exact: true })).toBeVisible();
+  await node.locator('.org-person').click();
+  await expect(editor.getByLabel('Workflow access')).toBeVisible();
+  await editor.getByRole('button', { name: 'Close person settings', exact: true }).click();
+  await expect(editor.locator('.reporting-editor')).toBeHidden();
+  await editor.getByRole('button', { name: 'Find head', exact: true }).click();
+  await editor.getByRole('button', { name: 'Fullscreen map', exact: true }).click();
+  await expect.poll(() => admin.page.evaluate(() => document.fullscreenElement?.className)).toBe('reporting-graph');
+  await expect(editor.getByRole('button', { name: 'Exit fullscreen', exact: true })).toBeVisible();
+  expect((await editor.locator('.org-canvas').boundingBox()).height).toBeGreaterThan(800);
+  await editor.screenshot({ path: 'test-results/reporting-fullscreen.png' });
+  await editor.getByRole('button', { name: 'Exit fullscreen', exact: true }).click();
+  await expect.poll(() => admin.page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+  await expect(editor).toBeVisible();
+  await expect.poll(position).toEqual(before);
   await editor.screenshot({ path: 'test-results/reporting-auto-arranged.png' });
   await admin.context.close();
 });
@@ -635,4 +672,125 @@ test('work change requests replace planned work only after reviewer approval and
   expect(await manager.page.getByRole('dialog').evaluate(node => node.scrollWidth > node.clientWidth + 1)).toBe(false);
   await manager.page.getByRole('dialog').screenshot({ path: 'test-results/work-change-history-mobile.png' });
   for (const person of [admin, editor, hof, manager, employee]) await person.context.close();
+});
+
+
+test('personal plan owner can be found by EPF within the selected department', async ({ browser }) => {
+  const editor = await actor(browser, 'emp011@example.test');
+  const state = await workspace(editor.context, 'planning');
+  const owner = state.owners.find(person => person.employee_number && state.memberships.some(link => link.user_id === person.id));
+  const department = state.memberships.find(link => link.user_id === owner.id).department_id;
+  await editor.page.goto('/planning/plans');
+  await editor.page.getByRole('button', { name: 'Create plan', exact: true }).click();
+  const dialog = editor.page.getByRole('dialog', { name: 'Create a personal plan', exact: true });
+  const search = dialog.getByLabel('Find plan owner by EPF');
+  await expect(search).toBeDisabled();
+  await dialog.getByRole('combobox', { name: /^Department/ }).selectOption(String(department));
+  await dialog.getByLabel('Plan title').fill('EPF selection check');
+  await search.fill(owner.employee_number);
+  const picker = dialog.getByRole('combobox', { name: /^Plan owner/ });
+  await expect(picker).toHaveValue(String(owner.id));
+  await expect(picker.locator('option:checked')).toHaveText(new RegExp(`^${owner.employee_number}`));
+  await expect(dialog.locator('.selected-owner')).toContainText(owner.name);
+  await expect(dialog.getByLabel('Plan ID')).toHaveValue(new RegExp(owner.employee_number + '$'));
+  await search.fill('NO-SUCH-EPF');
+  await expect(picker).toHaveValue('');
+  await expect(dialog.getByRole('button', { name: 'Create draft', exact: true })).toBeDisabled();
+  await search.fill(owner.employee_number);
+  await dialog.screenshot({ path: 'test-results/plan-owner-epf.png' });
+  await dialog.getByRole('combobox', { name: /^Department/ }).selectOption('');
+  await expect(search).toHaveValue('');
+  await expect(picker).toHaveValue('');
+  await editor.context.close();
+});
+
+
+test('CIO workbook example delegates a linked KPA and department editor edits and adds tasks', async ({ browser }) => {
+  const editor = await actor(browser, 'emp011@example.test');
+  const hof = await actor(browser, 'emp001@example.test');
+  const manager = await actor(browser, 'emp004@example.test');
+  const employee = await actor(browser, 'emp007@example.test');
+  const admin = await actor(browser, 'admin@pulse.test');
+  const organization = await workspace(admin.context, 'admin');
+  const editorRecord = organization.users.find(person => person.employee_number === 'EMP011');
+  await mutate(admin.context, `/api/admin/users/${editorRecord.id}`, { ...editorRecord, memberships: organization.departments.map(row => ({ department_id: row.id, responsibility: 'employee', manager_ids: [] })) }, 'put');
+  let mdRecord = organization.users.find(person => person.system_role === 'md');
+  if (!mdRecord) {
+    await mutate(admin.context, '/api/admin/users', { name: 'CIO Workflow MD', employee_number: 'CIO-MD', designation: 'Managing Director', grade: 'A1', email: 'cio.md@example.test', system_role: 'md', is_active: true, password, memberships: [] });
+    mdRecord = { email: 'cio.md@example.test' };
+  }
+  const md = await actor(browser, mdRecord.email);
+  const org = await workspace(editor.context, 'planning');
+  const owner = org.owners.find(person => person.employee_number === 'EMP001');
+  const assignee = org.owners.find(person => person.employee_number === 'EMP004');
+  const worker = org.owners.find(person => person.employee_number === 'EMP007');
+  const department = org.departments.find(row => row.code === 'IT').id;
+  const { readFile } = await import('node:fs/promises');
+  const example = JSON.parse(await readFile(new URL('../../backend/tests/Fixtures/cio-workflow-example.json', import.meta.url), 'utf8'));
+  example.code = 'CIO-BROWSER-2090'; example.year = 2090; example.owner_id = owner.id;
+  for (const kpa of example.kpas) { kpa.department_id = department; for (const kpi of kpa.kpis) for (const activity of kpi.activities) activity.due_date = '2090-12-15'; }
+  const plan = await mutate(editor.context, '/api/planning/plans', example);
+  await mutate(editor.context, `/api/planning/plans/${plan.id}/publish`, { revision: 1 });
+  await mutate(hof.context, '/api/hof/kpi-assignments', { plan_id: plan.id, kpi_code: 'CIO-KPI-05', source_revision: 2, version: 0, assignee_id: assignee.id });
+  // Simulate a slower refresh so a saved modal cannot expose stale assignment versions.
+  await editor.page.route('**/api/planning/work', async route => {
+    const response = await route.fetch();
+    await new Promise(resolve => setTimeout(resolve, 250));
+    await route.fulfill({ response });
+  });
+  await editor.page.goto('/planning/work');
+  await editor.page.getByLabel('Search work assignments').fill('Drive technology modernization');
+  const card = editor.page.locator('.plan-work-kpi').filter({ has: editor.page.getByRole('heading', { name: 'Drive technology modernization', exact: true }) });
+  await expect(card).toContainText(assignee.name);
+  await expect(card).toContainText('Recipient’s linked KPA');
+  await card.getByRole('button', { name: 'Edit KPI assignment', exact: true }).click();
+  await editor.page.getByRole('dialog').getByLabel('Instructions').fill('Editor coordinated this assignment for the CIO.');
+  await editor.page.getByRole('button', { name: 'Save KPI assignment', exact: true }).click();
+  await expect(editor.page.getByRole('dialog')).toHaveCount(0);
+  await card.locator('summary').click();
+  const activity = card.locator('.plan-work-activity').filter({ has: editor.page.getByRole('heading', { name: /^initiate digital transformation projects$/i }) });
+  await activity.getByRole('button', { name: 'Add tasks', exact: true }).click();
+  const dialog = editor.page.getByRole('dialog', { name: 'Task breakdown', exact: true });
+  await dialog.getByRole('button', { name: 'Add task', exact: true }).click();
+  await dialog.getByLabel('Task 1 title').fill('CIO implementation delivery');
+  await dialog.getByLabel('Task 1 owner').selectOption(String(worker.id));
+  await dialog.getByLabel('Task 1 weight (%)').fill('70');
+  await dialog.getByRole('button', { name: 'Add task', exact: true }).click();
+  await dialog.getByLabel('Task 2 title').fill('Manager completion report');
+  await dialog.getByLabel('Task 2 weight (%)').fill('30');
+  await dialog.getByRole('button', { name: 'Save 100% breakdown', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const delivery = await workspace(manager.context);
+  const assigned = delivery.managed.find(row => row.activity_code === 'CIO-ACT-05-03');
+  const task = assigned.tasks.find(row => row.assignee_id === worker.id);
+  expect(task.reviewer_id).toBe(assignee.id);
+  await mutate(employee.context, `/api/delivery/tasks/${task.id}/submit`, { version: task.version, evidence: 'Implementation complete with verification evidence.' });
+  const reviewer = await workspace(manager.context);
+  const review = reviewer.reviews.find(row => row.id === task.id);
+  const submission = reviewer.submissions.find(row => row.task_id === task.id);
+  await mutate(manager.context, `/api/delivery/submissions/${submission.id}/review`, { version: review.version, decision: 'approved' });
+  const cio = await workspace(hof.context, 'hof');
+  expect(cio.kpis.find(row => row.kpi_code === 'CIO-KPI-05').confirmed_progress).toBeCloseTo(28, 2);
+  const cioPersonal = (await (await hof.context.request.get(`/api/allocations/people/${owner.id}/2090`)).json()).live_score;
+  expect(cioPersonal.confirmed_completion).toBeCloseTo(4.2, 2);
+  const executive = await (await md.context.request.get('/api/md/workspace?year=2090')).json();
+  expect(executive.activities.find(row => row.code === 'CIO-ACT-05-03').approved).toBe(70);
+  expect(executive.activities.reduce((sum, row) => sum + row.weight * row.approved, 0)).toBeCloseTo(4.2, 2);
+  await manager.page.goto('/delivery/kpis');
+  await expect(manager.page.getByRole('heading', { name: /^Linked KPAs/ })).toBeVisible();
+  await expect(manager.page.locator('.mixed-kpi-card').filter({ hasText: 'Drive technology modernization' })).toContainText('28% approved');
+  await editor.page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(card).toContainText('28% approved');
+  await activity.getByRole('button', { name: 'View task breakdown', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Save 100% breakdown', exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await editor.page.screenshot({ path: 'test-results/cio-editor-work.png', fullPage: true });
+  await editor.page.setViewportSize({ width: 390, height: 844 });
+  expect(await editor.page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await editor.page.screenshot({ path: 'test-results/cio-editor-work-mobile.png', fullPage: true });
+  await editor.page.setViewportSize({ width: 1440, height: 1000 });
+  await card.getByRole('button', { name: 'Edit plan / add activities', exact: true }).click();
+  await expect(editor.page).toHaveURL(/\/planning\/plans$/);
+  await expect(editor.page.getByRole('button', { name: /Save draft/ })).toBeVisible();
+  await Promise.all([editor.context.close(), hof.context.close(), manager.context.close(), employee.context.close(), admin.context.close(), md.context.close()]);
 });

@@ -1,0 +1,501 @@
+{
+  "code": "TEST-CIO-2027-14673",
+  "title": "2027 CIO workflow test plan",
+  "year": 2027,
+  "kpas": [
+    {
+      "code": "CIO-KPA-01",
+      "title": "IT Financial Management",
+      "weight": 0.1,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-01",
+          "title": "Optimize IT expenditure",
+          "weight": 1,
+          "target_value": 5,
+          "target_unit": "percent",
+          "frequency": "Annually",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: Reduction from agreed comparable annual IT cost baseline. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-01-01",
+              "title": "Prepare and monitor IT budget",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-01-02",
+              "title": "review expenditure",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-01-03",
+              "title": "identify cost-saving opportunities",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-01-04",
+              "title": "approve/monitor IT procurement",
+              "weight": 0.15,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-01-05",
+              "title": "optimize licensing, connectivity and maintenance costs",
+              "weight": 0.15,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CIO-KPA-02",
+      "title": "IT Strategy",
+      "weight": 0.1,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-02",
+          "title": "Implement IT strategic initiatives",
+          "weight": 1,
+          "target_value": 4,
+          "target_unit": "count",
+          "frequency": "Quarterly",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: Approved strategic initiatives completed. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-02-01",
+              "title": "Develop IT strategic plans",
+              "weight": 0.3,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-02-02",
+              "title": "align IT initiatives with business objectives",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-02-03",
+              "title": "monitor strategic projects",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-02-04",
+              "title": "review progress with management",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CIO-KPA-03",
+      "title": "IT Service Excellence",
+      "weight": 0.2,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-03",
+          "title": "Maintain critical IT service availability",
+          "weight": 1,
+          "target_value": 99.5,
+          "target_unit": "percent",
+          "frequency": "Monthly",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: Critical service uptime / agreed service window. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-03-01",
+              "title": "Monitor overall IT service performance",
+              "weight": 0.4,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-03-02",
+              "title": "review major incidents",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-03-03",
+              "title": "ensure corrective actions",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-03-04",
+              "title": "conduct management reviews of service availability",
+              "weight": 0.15,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CIO-KPA-04",
+      "title": "Cybersecurity & Risk",
+      "weight": 0.15,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-04",
+          "title": "Strengthen enterprise IT security",
+          "weight": 1,
+          "target_value": 95,
+          "target_unit": "percent",
+          "frequency": "Quarterly",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: Due remediation actions closed within SLA. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-04-01",
+              "title": "Review cybersecurity risks",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-04-02",
+              "title": "approve security initiatives",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-04-03",
+              "title": "monitor major incidents",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-04-04",
+              "title": "ensure vulnerability remediation",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-04-05",
+              "title": "review security policies",
+              "weight": 0.15,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CIO-KPA-05",
+      "title": "Digital Transformation",
+      "weight": 0.15,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-05",
+          "title": "Drive technology modernization",
+          "weight": 1,
+          "target_value": 3,
+          "target_unit": "count",
+          "frequency": "Quarterly",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: Modernization initiatives accepted by business owners. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-05-01",
+              "title": "Identify new technologies",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-05-02",
+              "title": "evaluate automation opportunities",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-05-03",
+              "title": "initiate digital transformation projects",
+              "weight": 0.4,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-05-04",
+              "title": "monitor implementation",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CIO-KPA-06",
+      "title": "IT Governance",
+      "weight": 0.1,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-06",
+          "title": "Ensure IT governance and compliance",
+          "weight": 1,
+          "target_value": 100,
+          "target_unit": "percent",
+          "frequency": "Quarterly",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: Applicable governance requirements satisfied. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-06-01",
+              "title": "Review IT policies, procedures and SOPs",
+              "weight": 0.3,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-06-02",
+              "title": "ensure regulatory compliance",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-06-03",
+              "title": "coordinate internal/external audits",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-06-04",
+              "title": "monitor corrective actions",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CIO-KPA-07",
+      "title": "Customer Satisfaction",
+      "weight": 0.05,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-07",
+          "title": "Improve IT customer satisfaction",
+          "weight": 1,
+          "target_value": 85,
+          "target_unit": "percent",
+          "frequency": "Quarterly",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: Satisfied responses / valid survey responses. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-07-01",
+              "title": "Review user feedback",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-07-02",
+              "title": "conduct management reviews",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-07-03",
+              "title": "identify recurring service issues",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-07-04",
+              "title": "implement service improvements",
+              "weight": 0.3,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CIO-KPA-08",
+      "title": "Vendor Management",
+      "weight": 0.05,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-08",
+          "title": "Improve vendor performance",
+          "weight": 1,
+          "target_value": 90,
+          "target_unit": "percent",
+          "frequency": "Quarterly",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: Vendor SLA measures met / applicable measures. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-08-01",
+              "title": "Review contracts and SLAs",
+              "weight": 0.3,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-08-02",
+              "title": "conduct vendor performance reviews",
+              "weight": 0.3,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-08-03",
+              "title": "resolve escalated vendor issues",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-08-04",
+              "title": "monitor service quality",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CIO-KPA-09",
+      "title": "Business Continuity",
+      "weight": 0.05,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-09",
+          "title": "Strengthen IT resilience",
+          "weight": 1,
+          "target_value": 2,
+          "target_unit": "count",
+          "frequency": "Annually",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: DR exercises completed with signed reports. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-09-01",
+              "title": "Review BCP/DR plans",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-09-02",
+              "title": "approve DR exercises",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-09-03",
+              "title": "evaluate recovery results",
+              "weight": 0.3,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-09-04",
+              "title": "ensure corrective actions",
+              "weight": 0.2,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CIO-KPA-10",
+      "title": "People Development",
+      "weight": 0.05,
+      "notes": "Source: KPINEW.xlsx, CIO sheet. Weights, targets and deadlines are proposed for workflow testing.",
+      "kpis": [
+        {
+          "code": "CIO-KPI-10",
+          "title": "Develop IT leadership and capability",
+          "weight": 1,
+          "target_value": 90,
+          "target_unit": "percent",
+          "frequency": "Annually",
+          "direction": "higher",
+          "notes": "Proposed workflow-test target: Approved staff training actions completed. Confirm production baseline and target before operational use.",
+          "activities": [
+            {
+              "code": "CIO-ACT-10-01",
+              "title": "Identify competency gaps",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-10-02",
+              "title": "approve training plans",
+              "weight": 0.35,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-10-03",
+              "title": "encourage knowledge sharing",
+              "weight": 0.25,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            },
+            {
+              "code": "CIO-ACT-10-04",
+              "title": "succession planning",
+              "weight": 0.15,
+              "due_date": "2027-12-15",
+              "notes": "Workflow-test deadline. Evidence must show the agreed deliverable."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

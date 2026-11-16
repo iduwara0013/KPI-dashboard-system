@@ -1,6 +1,6 @@
 const pages = {
   admin: ['overview', 'people', 'departments', 'reporting', 'access', 'activity'],
-  planning: ['extra', 'overview', 'plans', 'history', 'allocations', 'results'],
+  planning: ['work', 'extra', 'overview', 'plans', 'history', 'allocations', 'results'],
   md: ['extra', 'overview', 'departments', 'hofs', 'work'],
   hof: ['extra', 'overview', 'breakdown', 'activities', 'own', 'delegated', 'team', 'reviews', 'personal', 'results'],
   delivery: ['extra', 'overview', 'activities', 'kpis', 'tasks', 'reviews', 'team', 'personal', 'results'],
@@ -45,7 +45,7 @@ export function resolveWorkspace(pathname, user) {
   const [workspace, page = workspace === 'delivery' ? defaultDeliveryPage(user) : 'overview', ...extra]
     = path === '/' ? [home] : path.slice(1).split('/');
   if (extra.length || !Object.hasOwn(pages, workspace) || !pages[workspace].includes(page)) return { error: 'not_found' };
-  const editorOnly = workspace === 'planning' && ['allocations', 'extra'].includes(page);
+  const editorOnly = workspace === 'planning' && ['allocations', 'extra', 'work'].includes(page);
   if (!access[workspace] || (editorOnly && role !== 'plan_editor')) return { error: 'forbidden' };
   return { workspace, page };
 }

@@ -12,6 +12,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrganizationChartController;
 use App\Http\Controllers\PerformancePlanController;
 use App\Http\Controllers\PersonalAllocationController;
+use App\Http\Controllers\PlanWorkController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\TvDisplayController;
 use App\Http\Controllers\WorkChangeController;
@@ -86,6 +87,11 @@ Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecuti
         Route::put('/assignments/{assignment}/progress', [HofWorkController::class, 'progress'])->whereNumber('assignment')->middleware('throttle:30,1');
     });
     Route::middleware(['auth', RequirePlanningAccess::class])->prefix('planning')->group(function () {
+        Route::get('/work', [PlanWorkController::class, 'workspace']);
+        Route::post('/work/assignments', [HofWorkController::class, 'assign'])->middleware('throttle:30,1');
+        Route::post('/work/kpi-assignments', [KpiAssignmentController::class, 'assign'])->middleware('throttle:30,1');
+        Route::put('/work/assignments/{assignment}/tasks', [DeliveryController::class, 'breakdown'])->whereNumber('assignment')->middleware('throttle:30,1');
+        Route::put('/work/tasks/{task}/tasks', [DeliveryController::class, 'breakdownTask'])->whereNumber('task')->middleware('throttle:30,1');
         Route::get('/workspace', [PerformancePlanController::class, 'workspace']);
         Route::get('/excel-import/options', [ExcelPlanImportController::class, 'options']);
         Route::post('/excel-import', [ExcelPlanImportController::class, 'import'])->middleware('throttle:30,1');

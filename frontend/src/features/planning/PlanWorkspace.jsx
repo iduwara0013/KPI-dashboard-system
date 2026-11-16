@@ -1,3 +1,4 @@
+import PlanWorkWorkspace from './PlanWorkWorkspace.jsx';
 import ExtraWorkWorkspace from '../delivery/ExtraWorkWorkspace.jsx';
 import { registerNavigationGuard } from '../../services/navigationGuard.js';
 import DashboardCharts from '../../components/DashboardCharts.jsx';
@@ -108,7 +109,7 @@ export default function PlanWorkspace({ session, onSession, page, onPage, onWork
   const navigation = [
     ['overview', 'Overview', LayoutDashboard, ['overview'], 'Planning health & priorities'],
     ['plans', editor ? 'Plans & history' : 'My plans & history', FolderTree, ['plans', 'history'], 'Plans, revisions & publication'],
-    ...(editor ? [['extra', 'Extra work', ClipboardList, ['extra'], 'Department extra work'], ['allocations', 'Personal allocations', Users, ['allocations'], 'Review personal 100% weights']] : []),
+    ...(editor ? [['work', 'Work assignments', ClipboardList, ['work'], 'Delegation & linked KPAs'], ['extra', 'Extra work', ClipboardList, ['extra'], 'Department extra work'], ['allocations', 'Personal allocations', Users, ['allocations'], 'Review personal 100% weights']] : []),
   ];
   const currentSection = navigation.find(([, , , views]) => views.includes(page));
 
@@ -125,7 +126,7 @@ export default function PlanWorkspace({ session, onSession, page, onPage, onWork
     </aside>
     <div className="workspace"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileNav(true)}><Menu size={22} /></button><span>CPSTL</span><ChevronRight size={14} /><strong>{detail ? detail.plan.code : page === 'results' ? 'Monthly KPI Results' : currentSection?.[1] || 'Performance planning'}</strong></div><div className="topbar-right"><span className="planning-role"><ShieldCheck size={14} />{editor ? 'Planning access' : 'Read-only access'}</span><button className="icon-button" aria-label="Open planning guide" onClick={() => setModal({ kind: 'guide' })}><CircleHelp size={20} /></button><span className="topbar-divider" /><Avatar name={session.name} small /></div></header>
       <main>
-        {page === 'extra' ? <ExtraWorkWorkspace session={session} plannedHref="/planning/plans" notificationTarget={notificationTarget} /> : page === 'allocations' ? <PersonalAllocationWorkspace session={session} embedded navigationGuard={allocationGuard} onBack={() => navigate('overview')} /> : page === 'results' ? <MonthlyKpiWorkspace session={session} embedded notificationTarget={notificationTarget} /> : <>
+        {page === 'work' ? <PlanWorkWorkspace onOpenPlan={id => { navigate('plans'); openPlan(id); }} /> : page === 'extra' ? <ExtraWorkWorkspace session={session} plannedHref="/planning/plans" notificationTarget={notificationTarget} /> : page === 'allocations' ? <PersonalAllocationWorkspace session={session} embedded navigationGuard={allocationGuard} onBack={() => navigate('overview')} /> : page === 'results' ? <MonthlyKpiWorkspace session={session} embedded notificationTarget={notificationTarget} /> : <>
         {['plans', 'history'].includes(page) && <nav className="workspace-section-tabs" aria-label="Plan views">{[['plans', 'Performance plans', FolderTree], ['history', 'Revision history', History]].map(([key, label, Icon]) => <RouteLink key={key} href={workspacePath('planning', key)} aria-current={page === key ? 'page' : undefined} className={page === key ? 'is-active' : ''} onNavigate={() => navigate(key)}><Icon size={17} /><span>{label}</span>{key === 'plans' && <small>{data.plans.length}</small>}</RouteLink>)}</nav>}
         {error && <div className="load-error"><ErrorBox error={error} /><button className="btn btn-secondary" onClick={() => refresh().catch(() => {})}>Retry</button></div>}
         {loading || detailLoading ? <div className="content-loading"><LoaderCircle className="spin" /><p>Opening performance plans…</p></div> : detail ? <PlanEditor key={`${detail.plan.id}-${detail.plan.revision}`} detail={detail} data={data} onDirty={setDirty} onBack={() => navigate('plans')} onSaved={saved} onHistory={() => setModal({ kind: 'history' })} /> : <>
@@ -252,6 +253,7 @@ function Allocation({ total, empty = false, label }) {
 function CreatePlanForm({ data, onClose, onCreated }) {
   const currentYear = new Date().getFullYear();
   const [departmentId, setDepartmentId] = useState('');
+  const [ownerEpf, setOwnerEpf] = useState('');
   const [form, setForm] = useState({ title: '', code: null, owner_id: '', year: currentYear, kpas: [] });
   const [error, setError] = useState(null), [busy, setBusy] = useState(false);
   async function submit(e) {
@@ -263,6 +265,8 @@ function CreatePlanForm({ data, onClose, onCreated }) {
   const selectedOwner = ownerOf(data, form.owner_id);
   const owners = data.owners.filter(owner => data.memberships.some(membership =>
     sameId(membership.user_id, owner.id) && sameId(membership.department_id, departmentId)));
+  const matchingOwners = owners.filter(owner => String(owner.employee_number || '').toLowerCase().includes(ownerEpf.trim().toLowerCase()))
+    .sort((a, b) => String(a.employee_number || '').localeCompare(String(b.employee_number || ''), undefined, { numeric: true }));
   const departments = departmentsForOwner(data, form.owner_id);
   const code = form.code ?? (selectedOwner && form.year ? `PLAN-${form.year}-${selectedOwner.employee_number || selectedOwner.id}`.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 64) : '');
   return <form onSubmit={submit}>
@@ -271,6 +275,7 @@ function CreatePlanForm({ data, onClose, onCreated }) {
       <Field label="Department" required>
         <select value={departmentId} required disabled={busy} onChange={event => {
           setDepartmentId(event.target.value);
+          setOwnerEpf('');
           setForm(previous => ({ ...previous, owner_id: '' }));
           setError(null);
         }}>
@@ -282,12 +287,21 @@ function CreatePlanForm({ data, onClose, onCreated }) {
         <input value={form.title} onChange={event => setForm({ ...form, title: event.target.value })}
           maxLength={180} placeholder="e.g. 2026 IT and digital services plan" required />
       </Field>
+      <Field label="Find plan owner by EPF" hint="Enter the full EPF to select automatically, or part of it to filter the list.">
+        <input type="search" value={ownerEpf} disabled={busy || !departmentId} placeholder="Enter EPF number" autoComplete="off"
+          onChange={event => {
+            const value = event.target.value;
+            setOwnerEpf(value);
+            const exact = owners.find(owner => owner.employee_number && String(owner.employee_number).toLowerCase() === value.trim().toLowerCase());
+            setForm(previous => ({ ...previous, owner_id: exact ? String(exact.id) : '' }));
+          }} />
+      </Field>
       <div className="form-grid">
-        <Field label="Plan owner" required hint={departmentId ? `${owners.length} active people in this department.` : 'Choose a department to see its people.'}>
+        <Field label="Plan owner" required hint={departmentId ? `${matchingOwners.length} matching people in this department.` : 'Choose a department to see its people.'}>
           <select value={form.owner_id} disabled={busy || !departmentId || !owners.length}
             onChange={event => setForm({ ...form, owner_id: event.target.value })} required>
-            <option value="">{departmentId ? owners.length ? 'Select a person' : 'No active people in this department' : 'Select department first'}</option>
-            {owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name} · {owner.employee_number}{owner.designation ? ` · ${owner.designation}` : ''}</option>)}
+            <option value="">{departmentId ? matchingOwners.length ? 'Select EPF · person' : 'No matching EPF in this department' : 'Select department first'}</option>
+            {matchingOwners.map(owner => <option key={owner.id} value={owner.id}>{owner.employee_number || 'No EPF'} · {owner.name}{owner.designation ? ` · ${owner.designation}` : ''}</option>)}
           </select>
         </Field>
         <Field label="Performance year" required>
@@ -301,7 +315,7 @@ function CreatePlanForm({ data, onClose, onCreated }) {
       </Field>
       {selectedOwner && <div className="selected-owner">
         <Avatar name={selectedOwner.name} />
-        <div><strong>{selectedOwner.name}</strong><span>{selectedOwner.designation}</span>
+        <div><strong>{selectedOwner.name}</strong><span>EPF {selectedOwner.employee_number} · {selectedOwner.designation}</span>
           <div className="owner-departments">{departments.map(department => <Badge key={department.id}>{department.name}</Badge>)}</div>
         </div>
       </div>}

@@ -39,7 +39,7 @@ export default function ExtraWorkWorkspace({ session, plannedHref, notificationT
       && (!notificationTarget.extra_submission_id || same(latest?.id, notificationTarget.extra_submission_id));
     setModal({ kind: canReview ? 'review' : 'history', task });
   }, [data, notificationTarget, session.id]);
-  async function saved(text) { setModal(null); setMessage(text); await refresh(); }
+  async function saved(text) { await refresh(); setModal(null); setMessage(text); }
   const person = id => data.people.find(person => same(person.id, id))?.name || 'Previous team member';
   const departmentName = id => data.departments.find(item => same(item.id, id))?.name || 'Department';
   const inScope = row => (year === 'all' || same(row.year, year)) && (department === 'all' || same(row.department_id, department));

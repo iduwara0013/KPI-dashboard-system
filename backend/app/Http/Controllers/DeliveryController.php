@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Middleware\RequireDeliveryAccess;
+use App\Http\Middleware\RequirePlanningAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -297,8 +298,9 @@ class DeliveryController extends Controller
             [$parent] = $this->lockAssignment($assignment);
             $branch = $parentTask ? DB::table('delivery_tasks')->where('id', $parentTask)->lockForUpdate()->first() : null;
             abort_unless(! $parentTask || ($branch && $this->taskEligible($branch, $parent)), 409, 'This task is no longer current.');
-            $actor = $request->user()->id;
-            abort_unless((int) ($branch?->assignee_id ?? $parent->assignee_id) === $actor, 403, 'Only the person responsible for this work can divide it.');
+            $responsible = (int) ($branch?->assignee_id ?? $parent->assignee_id);
+            abort_unless($responsible === $request->user()->id || RequirePlanningAccess::canManageWork($request->user(), (int) $parent->plan_id, (int) $parent->department_id), 403, 'Only the responsible person or a department plan editor can divide this work.');
+            $actor = $responsible;
             abort_unless((int) ($branch?->version ?? $parent->version) === (int) $data['version'], 409, 'This work changed. Refresh before saving.');
             abort_if($branch && ((float) $branch->reported_progress > 0 || DB::table('task_submissions')->where('task_id', $branch->id)->exists()), 409, 'Work that has started cannot be divided again.');
             $existing = DB::table('delivery_tasks')->where('assignment_id', $assignment)->where('generation', $parent->delivery_generation)

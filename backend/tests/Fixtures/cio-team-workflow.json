@@ -1,0 +1,279 @@
+{
+  "people": [
+    {
+      "epf": "14673",
+      "name": "G A S GAJADEERA",
+      "role": "hof",
+      "reports_to": null
+    },
+    {
+      "epf": "11434",
+      "name": "E M S SAKUNTHALA EKANAYAKE",
+      "role": "manager",
+      "reports_to": "14673"
+    },
+    {
+      "epf": "16502",
+      "name": "U G PATHIRATNE",
+      "role": "manager",
+      "reports_to": "14673"
+    },
+    {
+      "epf": "16503",
+      "name": "W N A C PRIYASHANTHA FERNANDO",
+      "role": "manager",
+      "reports_to": "14673"
+    },
+    {
+      "epf": "13334",
+      "name": "E M G W S B THALAGUNE",
+      "role": "manager",
+      "reports_to": "11434"
+    },
+    {
+      "epf": "14631",
+      "name": "J A G N JAYASINGHE",
+      "role": "manager",
+      "reports_to": "11434"
+    },
+    {
+      "epf": "16918",
+      "name": "P A D U ATHUKORALA",
+      "role": "manager",
+      "reports_to": "11434"
+    },
+    {
+      "epf": "16917",
+      "name": "M R K RATHNAWEERA",
+      "role": "manager",
+      "reports_to": "14631"
+    },
+    {
+      "epf": "17536",
+      "name": "P.S.L KODIKARA",
+      "role": "employee",
+      "reports_to": "16917"
+    },
+    {
+      "epf": "17528",
+      "name": "D.S.D GONAPINUWALA",
+      "role": "employee",
+      "reports_to": "16918"
+    },
+    {
+      "epf": "14994",
+      "name": "A N S MADANAYAKE",
+      "role": "manager",
+      "reports_to": "16502"
+    },
+    {
+      "epf": "11473",
+      "name": "A G L C WIJETHUNGA",
+      "role": "manager",
+      "reports_to": "16503"
+    },
+    {
+      "epf": "17611",
+      "name": "J.M.M.S KARUNARATHNE",
+      "role": "employee",
+      "reports_to": "16503"
+    },
+    {
+      "epf": "17612",
+      "name": "P.M.D MADHUSANKA",
+      "role": "employee",
+      "reports_to": "16503"
+    },
+    {
+      "epf": "17613",
+      "name": "R.G.S.M.P KUMARA",
+      "role": "employee",
+      "reports_to": "16503"
+    },
+    {
+      "epf": "16648",
+      "name": "K R PRASANNA",
+      "role": "employee",
+      "reports_to": "11473"
+    },
+    {
+      "epf": "17013",
+      "name": "W S M R K SENEVIRATHNA",
+      "role": "employee",
+      "reports_to": "11473"
+    },
+    {
+      "epf": "17496",
+      "name": "V M GEENOTHAN",
+      "role": "employee",
+      "reports_to": "11473"
+    },
+    {
+      "epf": "17514",
+      "name": "G PRATHEEP",
+      "role": "employee",
+      "reports_to": "11473"
+    },
+    {
+      "epf": "17516",
+      "name": "L S NANAYAKKARA",
+      "role": "employee",
+      "reports_to": "11473"
+    }
+  ],
+  "kpi_owners": {
+    "CIO-KPI-01": "14673",
+    "CIO-KPI-02": "11434",
+    "CIO-KPI-03": "16502",
+    "CIO-KPI-04": "16502",
+    "CIO-KPI-05": "11434",
+    "CIO-KPI-06": "11434",
+    "CIO-KPI-07": "16503",
+    "CIO-KPI-08": "16503",
+    "CIO-KPI-09": "16502",
+    "CIO-KPI-10": "11434"
+  },
+  "specials": {
+    "CIO-ACT-05-03": {
+      "template": "S",
+      "owner": "11434",
+      "tasks": [
+        {
+          "epf": "13334",
+          "title": "QA and acceptance checks",
+          "weight": 0.2
+        },
+        {
+          "epf": "14631",
+          "title": "Solution architecture and SAP delivery",
+          "weight": 0.35,
+          "children": [
+            {
+              "epf": "16917",
+              "title": "SAP implementation coordination",
+              "weight": 0.7,
+              "children": [
+                {
+                  "epf": "17536",
+                  "title": "Configure and verify solution",
+                  "weight": 0.8
+                },
+                {
+                  "epf": "16917",
+                  "title": "SAP integration validation",
+                  "weight": 0.2
+                }
+              ]
+            },
+            {
+              "epf": "14631",
+              "title": "Architecture review record",
+              "weight": 0.3
+            }
+          ]
+        },
+        {
+          "epf": "16918",
+          "title": "Development and deployment",
+          "weight": 0.3,
+          "children": [
+            {
+              "epf": "17528",
+              "title": "Functional configuration and checks",
+              "weight": 0.75
+            },
+            {
+              "epf": "16918",
+              "title": "Development review and release",
+              "weight": 0.25
+            }
+          ]
+        },
+        {
+          "epf": "11434",
+          "title": "Modernization management report",
+          "weight": 0.15
+        }
+      ]
+    },
+    "CIO-ACT-03-01": {
+      "template": "A",
+      "owner": "16502",
+      "tasks": [
+        {
+          "epf": "14994",
+          "title": "Infrastructure health and reliability review",
+          "weight": 0.8
+        },
+        {
+          "epf": "16502",
+          "title": "Service performance review and escalation",
+          "weight": 0.2
+        }
+      ]
+    },
+    "CIO-ACT-07-04": {
+      "template": "N",
+      "owner": "16503",
+      "tasks": [
+        {
+          "epf": "11473",
+          "title": "Data center service improvements",
+          "weight": 0.4,
+          "children": [
+            {
+              "epf": "16648",
+              "title": "Operational service checks",
+              "weight": 0.3
+            },
+            {
+              "epf": "17013",
+              "title": "Service and incident records",
+              "weight": 0.1
+            },
+            {
+              "epf": "17496",
+              "title": "Infrastructure improvement checks",
+              "weight": 0.2
+            },
+            {
+              "epf": "17514",
+              "title": "Monitoring and verification",
+              "weight": 0.15
+            },
+            {
+              "epf": "17516",
+              "title": "Follow-up service checks",
+              "weight": 0.15
+            },
+            {
+              "epf": "11473",
+              "title": "Data center service acceptance",
+              "weight": 0.1
+            }
+          ]
+        },
+        {
+          "epf": "17611",
+          "title": "Network service investigation",
+          "weight": 0.2
+        },
+        {
+          "epf": "17612",
+          "title": "Network corrective action checks",
+          "weight": 0.15
+        },
+        {
+          "epf": "17613",
+          "title": "User service verification",
+          "weight": 0.15
+        },
+        {
+          "epf": "16503",
+          "title": "Network service improvement review",
+          "weight": 0.1
+        }
+      ]
+    }
+  }
+}

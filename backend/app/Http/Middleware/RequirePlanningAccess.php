@@ -52,6 +52,12 @@ class RequirePlanningAccess
             ->every(fn ($snapshot) => collect(json_decode($snapshot, true)['kpas'])->every(fn ($kpa) => $departments->contains((int) $kpa['department_id'])));
     }
 
+    public static function canManageWork(User $user, int $plan, int $department): bool
+    {
+        return self::canEdit($user) && self::departmentIds($user)->contains($department)
+            && self::canManagePlan($user, $plan);
+    }
+
     public static function canView(?User $user): bool
     {
         return $user?->is_active && (self::canEdit($user) || ($user->system_role === 'member' && DB::table('department_memberships')

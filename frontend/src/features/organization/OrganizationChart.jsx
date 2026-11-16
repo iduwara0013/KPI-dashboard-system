@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Network, Minus, Plus, RotateCcw, GripVertical, WandSparkles, ChevronRight, Users, Link2, UserCheck, MousePointer2 } from 'lucide-react';
+import { Network, Maximize2, Minimize2, LocateFixed, Minus, Plus, RotateCcw, GripVertical, WandSparkles, ChevronRight, Users, Link2, UserCheck, MousePointer2 } from 'lucide-react';
 import { request } from '../../services/api.js';
 import { Avatar, Empty, ErrorBox } from '../../components/ui.jsx';
 import './organization-chart.css';
@@ -51,6 +51,17 @@ export default function OrganizationChart() {
 
 export function ReportingGraph({ people, links, selected, onSelect, showUnassigned = false, editableLayout = false, layoutKey = '' }) {
   const [zoom, setZoom] = useState(1);
+  const graph = useRef(null), fullscreenButton = useRef(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    function sync() {
+      const active = document.fullscreenElement === graph.current;
+      setFullscreen(active);
+      if (!active && graph.current?.contains(document.activeElement)) fullscreenButton.current?.focus();
+    }
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
   const [collapsed, setCollapsed] = useState(new Set());
   const canvas = useRef(null);
   const [canvasWidth, setCanvasWidth] = useState(900);
@@ -60,7 +71,7 @@ export function ReportingGraph({ people, links, selected, onSelect, showUnassign
     observer.observe(canvas.current);
     return () => observer.disconnect();
   }, []);
-  const storageKey = `cpstl:reporting-layout:v1:${layoutKey}`;
+  const storageKey = `cpstl:reporting-layout:top-down:v2:${layoutKey}`;
   const [manual, setManual] = useState(() => {
     if (!editableLayout || !layoutKey) return {};
     try {
@@ -154,6 +165,29 @@ export function ReportingGraph({ people, links, selected, onSelect, showUnassign
     node?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [selected, selectedX, selectedY]);
 
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement === graph.current) await document.exitFullscreen();
+      else await graph.current.requestFullscreen();
+    } catch { setLayoutMessage('Fullscreen could not open. Please try again in your browser.'); }
+  }
+  function fullscreenKeyboard(event) {
+    if (!fullscreen) return;
+    event.stopPropagation();
+    if (event.key !== 'Tab') return;
+    const controls = [...graph.current.querySelectorAll('button:not([disabled]), [tabindex="0"]')].filter(node => node.getClientRects().length);
+    const first = controls[0], last = controls.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
+
+  function locateStart() {
+    const root = people.find(person => positions[person.id] && links.some(link => same(link.manager_id, person.id)) && !links.some(link => same(link.user_id, person.id))) || people.find(person => positions[person.id]);
+    if (!root || !canvas.current) return;
+    const point = positions[root.id];
+    canvas.current.scrollTo({ left: Math.max(0, point.x * zoom - 30), top: Math.max(0, point.y * zoom - canvas.current.clientHeight / 2 + (heights[root.id] || 160) * zoom / 2) });
+  }
+
   function toggleBranch(id) {
     setCollapsed(previous => {
       const next = new Set(previous);
@@ -163,15 +197,17 @@ export function ReportingGraph({ people, links, selected, onSelect, showUnassign
     });
   }
 
-  return <>
+  return <div ref={graph} className="reporting-graph" onKeyDown={fullscreenKeyboard}>
     <div className="org-toolbar org-zoom"><span className="org-map-caption"><Network size={16} />Reporting map</span>
       <button className="icon-button" aria-label="Zoom out chart" onClick={() => setZoom(value => Math.max(.5, value - .1))}><Minus size={16} /></button>
       <small aria-live="polite">{Math.round(zoom * 100)}%</small>
       <button className="icon-button" aria-label="Zoom in chart" onClick={() => setZoom(value => Math.min(1.5, value + .1))}><Plus size={16} /></button>
       <button className="icon-button" aria-label="Reset chart" onClick={() => { setZoom(1); setCollapsed(new Set()); }}><RotateCcw size={16} /></button>
+      {editableLayout && <button className="btn btn-secondary btn-small" onClick={locateStart}><LocateFixed size={15} />Find head</button>}
       {editableLayout && <button className="btn btn-secondary btn-small org-auto-arrange" onClick={arrange}><WandSparkles size={15} />Auto arrange</button>}
+      <button ref={fullscreenButton} type="button" className="btn btn-secondary btn-small" onClick={toggleFullscreen}>{fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}{fullscreen ? 'Exit fullscreen' : 'Fullscreen map'}</button>
     </div>
-    {editableLayout && <div className="org-layout-hint"><span>Drag the grip to arrange cards · Arrow keys move the focused card</span><span role="status">{layoutMessage || 'Layout only · reporting managers stay unchanged'}</span></div>}
+    {editableLayout && <div className="org-layout-hint"><span>Select to edit · Drag the grip to move</span><span role="status">{layoutMessage || 'Layout only · reporting managers stay unchanged'}</span></div>}
     <div ref={canvas} className="org-canvas" tabIndex={0} aria-label="Reporting chart, scroll to explore">
       <div style={{ width: width * zoom, height: height * zoom }}>
         <div className="org-scene" style={{ width, height, transform: `scale(${zoom})` }}>
@@ -202,5 +238,5 @@ export function ReportingGraph({ people, links, selected, onSelect, showUnassign
         </div>
       </div>
     </div>
-  </>;
+  </div>;
 }

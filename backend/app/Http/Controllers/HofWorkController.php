@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\RequirePlanningAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -181,7 +182,8 @@ class HofWorkController extends Controller
 
     public function assign(Request $request): JsonResponse
     {
-        $departments = $this->departments($request);
+        $editing = RequirePlanningAccess::canEdit($request->user()) && $request->is('api/planning/work/*');
+        $departments = $editing ? RequirePlanningAccess::departmentIds($request->user())->all() : $this->departments($request);
         $data = $request->validate([
             'plan_id' => ['required', 'integer'], 'activity_code' => ['required', 'string', 'max:64'],
             'source_revision' => ['required', 'integer', 'min:1'], 'version' => ['required', 'integer', 'min:0'],
@@ -190,12 +192,17 @@ class HofWorkController extends Controller
             'use_kpi_owner' => ['sometimes', 'boolean'],
             'proposed_personal_weight' => ['nullable', 'numeric', 'between:0,1'],
         ]);
-        DB::transaction(function () use ($request, $departments, $data): void {
+        DB::transaction(function () use ($request, $departments, $data, $editing): void {
             $plan = DB::table('performance_plans')->where('id', $data['plan_id'])->lockForUpdate()->first();
-            abort_unless($plan && (int) $plan->owner_id === $request->user()->id, 403, 'You can assign only your own published plan activities.');
+            abort_unless($plan && ((int) $plan->owner_id === $request->user()->id || $editing && RequirePlanningAccess::canManagePlan($request->user(), (int) $plan->id)), 403, 'You can assign only your own published plan activities.');
             abort_unless((int) $plan->published_revision === (int) $data['source_revision'], 409, 'The published plan changed. Refresh the work dashboard.');
             $activity = collect($this->activities($plan))->firstWhere('activity_code', $data['activity_code']);
             abort_unless($activity && in_array($activity['department_id'], $departments, true), 422, 'Choose a current published activity in your department.');
+            if ($editing) {
+                abort_unless(DB::table('department_memberships as m')->join('users as u', 'u.id', '=', 'm.user_id')
+                    ->where('m.user_id', $plan->owner_id)->where('m.department_id', $activity['department_id'])
+                    ->where('m.responsibility', 'hof')->where('u.is_active', true)->where('u.system_role', 'member')->exists(), 422, 'The plan owner must be an active HOF in this department.');
+            }
             $existing = DB::table('work_assignments')->where('plan_id', $plan->id)->where('activity_code', $data['activity_code'])->lockForUpdate()->first();
             abort_unless((int) ($existing->version ?? 0) === (int) $data['version'], 409, 'This assignment changed. Refresh before saving.');
             $delegation = DB::table('kpi_delegations')->where('plan_id', $plan->id)->where('kpi_code', $activity['kpi_code'])->first();

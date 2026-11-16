@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\RequirePlanningAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -64,7 +65,7 @@ class KpiAssignmentController extends Controller
 
     public function assign(Request $request): JsonResponse
     {
-        abort_unless($request->user()?->is_active && $request->user()->system_role === 'member', 403);
+        abort_unless($request->user()?->is_active && ($request->user()->system_role === 'member' || RequirePlanningAccess::canEdit($request->user()) && $request->is('api/planning/work/*')), 403);
         $data = $request->validate([
             'plan_id' => ['required', 'integer'], 'kpi_code' => ['required', 'string', 'max:64'],
             'source_revision' => ['required', 'integer', 'min:1'], 'version' => ['required', 'integer', 'min:0'],
@@ -73,10 +74,13 @@ class KpiAssignmentController extends Controller
         ]);
         DB::transaction(function () use ($request, $data): void {
             $plan = DB::table('performance_plans')->where('id', $data['plan_id'])->lockForUpdate()->first();
-            abort_unless($plan && (int) $plan->owner_id === $request->user()->id, 403);
+            abort_unless($plan && ((int) $plan->owner_id === $request->user()->id || RequirePlanningAccess::canEdit($request->user()) && RequirePlanningAccess::canManagePlan($request->user(), (int) $plan->id)), 403);
             abort_unless((int) $plan->published_revision === (int) $data['source_revision'], 409, 'The published plan changed. Refresh before assigning this KPI.');
             $kpi = collect($this->summaries(app(HofWorkController::class)->activities($plan), collect()))->firstWhere('kpi_code', $data['kpi_code']);
             abort_unless($kpi, 422, 'Choose a current published KPI.');
+            if (RequirePlanningAccess::canEdit($request->user())) {
+                abort_unless(RequirePlanningAccess::canManageWork($request->user(), (int) $plan->id, (int) $kpi['department_id']), 403);
+            }
             $hof = app(HofWorkController::class);
             $activeHof = DB::table('department_memberships as m')->join('departments as d', 'd.id', '=', 'm.department_id')
                 ->where('m.user_id', $plan->owner_id)->where('m.department_id', $kpi['department_id'])->where('m.responsibility', 'hof')->where('d.is_active', true)->exists();

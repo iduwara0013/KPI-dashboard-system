@@ -62,7 +62,7 @@ export default function DeliveryWorkspace({ session, onSession, page, onPage, on
     return () => { active = false; };
   }, [notificationTarget]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 5000); return () => clearTimeout(timer); }, [toast]);
-  async function saved(message) { setModal(null); await refresh(); setToast(message); }
+  async function saved(message) { await refresh(); setModal(null); setToast(message); }
   async function logout() { try { await request('/logout', { method: 'POST' }); onSession(null); } catch (err) { setError(err); } }
   function navigate(key) { const go = () => { onPage(key); setQuery(''); setStatus('all'); setMobile(false); }; if (allocationGuard.current) allocationGuard.current(go); else go(); }
   const manager = data.managed.length > 0 || data.employees.length > 0 || data.roles.includes('manager') || session.workspaces?.includes('manager');
@@ -82,7 +82,7 @@ export default function DeliveryWorkspace({ session, onSession, page, onPage, on
     ['tasks', 'My work', ClipboardList, [...workPages, 'extra']],
     ...(showTeam ? [['reviews', 'Team & reviews', Users, teamPages]] : []),
   ];
-  const workTabs = [['tasks', 'My tasks', UserCheck, tasks.length], ...(manager || page === 'activities' ? [['activities', 'Assigned activities', ClipboardList, activities.length]] : []), ...(manager || data.delegated_kpis.length || page === 'kpis' ? [['kpis', 'Linked KPIs', Target, data.delegated_kpis.filter(match).length]] : [])];
+  const workTabs = [['tasks', 'My tasks', UserCheck, tasks.length], ...(manager || page === 'activities' ? [['activities', 'Assigned activities', ClipboardList, activities.length]] : []), ...(manager || data.delegated_kpis.length || page === 'kpis' ? [['kpis', 'Linked KPAs', Target, data.delegated_kpis.filter(match).length]] : [])];
   const teamTabs = [['reviews', 'Needs my review', CheckCircle2, reviews.length], ...(manager || page === 'team' ? [['team', 'Team progress', Users, teamTasks.length]] : [])];
   const sectionTabs = workPages.includes(page) ? workTabs : teamPages.includes(page) ? teamTabs : [];
   const personalYear = year === 'all' ? (years.includes(new Date().getFullYear()) ? new Date().getFullYear() : years[0]) : Number(year);

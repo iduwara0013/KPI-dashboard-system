@@ -127,4 +127,15 @@ class DepartmentPlanningAccessTest extends TestCase
             'version' => 1, 'status' => 'draft', 'draft_payload' => '[]', 'created_at' => now(), 'updated_at' => now()]);
         $this->postJson('/api/allocations/'.$id.'/publish', ['version' => 1])->assertForbidden();
     }
+
+    public function test_mixed_plan_work_is_visible_only_in_department_and_remains_read_only(): void
+    {
+        $plan = $this->plan($this->document('EMP001', ['IT', 'DIG']));
+        $this->postJson('/api/planning/plans/'.$plan.'/publish', ['revision' => 1])->assertOk();
+        $response = $this->actingAs($this->editor)->getJson('/api/planning/work')->assertOk()->assertJsonCount(1, 'kpis')
+            ->assertJsonPath('kpis.0.kpi_code', 'KPI-IT')->assertJsonPath('kpis.0.can_edit', false);
+        $this->assertStringNotContainsString('Measure DIG', $response->getContent());
+        $this->postJson('/api/planning/work/kpi-assignments', ['plan_id' => $plan, 'source_revision' => 2, 'version' => 0, 'kpi_code' => 'KPI-IT',
+            'assignee_id' => User::where('employee_number', 'EMP004')->value('id')])->assertForbidden();
+    }
 }

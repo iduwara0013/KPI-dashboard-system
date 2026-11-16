@@ -37,7 +37,7 @@ export default function HofWorkspace({ session, onSession, page, onPage, notific
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 5000); return () => clearTimeout(timer); }, [toast]);
   function navigate(next) { const go = () => { onPage(next); setQuery(''); setMobile(false); }; if (allocationGuard.current) allocationGuard.current(go); else go(); }
   async function logout() { try { await request('/logout', { method: 'POST' }); onSession(null); } catch (err) { setError(err); } }
-  async function saved(message) { setModal(null); await refresh(); setToast(message); }
+  async function saved(message) { await refresh(); setModal(null); setToast(message); }
   const years = [...new Set([...data.activities.map(row => String(row.year)), year].filter(Boolean))].sort().reverse();
   const scoped = useMemo(() => data.activities.filter(row => String(row.year) === year && (department === 'all' || same(row.department_id, department))), [data.activities, year, department]);
   const own = scoped.filter(row => row.assignment && same(row.assignment.assignee_id, session.id));

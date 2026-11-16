@@ -461,4 +461,81 @@ class MixedAssignmentsTest extends TestCase
         $this->assertSame(500, mb_strlen(DB::table('delivery_tasks')->value('title')));
         $this->actingAs($this->employee)->getJson('/api/delivery/workspace')->assertJsonPath('tasks.0.parent.activity', trim($title));
     }
+
+    public function test_department_editor_can_manage_cascaded_work_without_becoming_its_reviewer(): void
+    {
+        $this->postJson('/api/hof/kpi-assignments', $this->kpiPayload($this->manager))->assertOk();
+        $assignment = DB::table('work_assignments')->where('activity_code', 'ACT-A')->first();
+        $department = (int) $assignment->department_id;
+        $subordinate = $this->user('EMP008');
+        DB::table('reporting_relationships')->where('department_id', $department)->where('user_id', $subordinate->id)->delete();
+        DB::table('reporting_relationships')->insert(['department_id' => $department, 'user_id' => $subordinate->id, 'manager_id' => $this->employee->id, 'created_at' => now(), 'updated_at' => now()]);
+        $this->actingAs($this->editor)->getJson('/api/planning/work')->assertOk()->assertJsonCount(1, 'kpis')->assertJsonCount(2, 'activities');
+        $this->putJson('/api/planning/work/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version, 'tasks' => [
+            ['title' => 'Employee delivery', 'assignee_id' => $this->employee->id, 'weight' => 1],
+        ]])->assertOk();
+        $parent = DB::table('delivery_tasks')->where('assignment_id', $assignment->id)->whereNull('parent_task_id')->first();
+        $this->assertSame($this->manager->id, (int) $parent->reviewer_id);
+        $this->putJson('/api/planning/work/tasks/'.$parent->id.'/tasks', ['version' => $parent->version, 'tasks' => [
+            ['title' => 'Subordinate 70', 'assignee_id' => $subordinate->id, 'weight' => .7],
+            ['title' => 'Employee own 30', 'assignee_id' => $this->employee->id, 'weight' => .3],
+        ]])->assertOk();
+        $child = DB::table('delivery_tasks')->where('parent_task_id', $parent->id)->where('assignee_id', $subordinate->id)->first();
+        $own = DB::table('delivery_tasks')->where('parent_task_id', $parent->id)->where('assignee_id', $this->employee->id)->first();
+        $this->assertSame($this->employee->id, (int) $child->reviewer_id);
+        $this->assertSame($this->manager->id, (int) $own->reviewer_id);
+        $this->assertDatabaseHas('admin_activity', ['actor_id' => $this->editor->id, 'action' => 'tasks.allocated']);
+        $this->putJson('/api/delivery/tasks/'.$child->id.'/progress', ['version' => $child->version, 'progress' => 100, 'note' => 'Forged'])->assertForbidden();
+        $this->actingAs($subordinate)->postJson('/api/delivery/tasks/'.$child->id.'/submit', ['version' => $child->version, 'evidence' => 'Completed 70 share with checks.'])->assertOk();
+        $submission = DB::table('task_submissions')->where('task_id', $child->id)->first();
+        $version = (int) DB::table('delivery_tasks')->where('id', $child->id)->value('version');
+        $this->actingAs($this->editor)->postJson('/api/delivery/submissions/'.$submission->id.'/review', ['version' => $version, 'decision' => 'approved'])->assertForbidden();
+        $this->actingAs($this->employee)->postJson('/api/delivery/submissions/'.$submission->id.'/review', ['version' => $version, 'decision' => 'approved'])->assertOk();
+        $this->assertEqualsWithDelta(70, DB::table('work_assignments')->where('id', $assignment->id)->value('confirmed_progress'), .001);
+        $this->actingAs($this->hof)->getJson('/api/hof/workspace')->assertOk()->assertJsonPath('kpis.0.confirmed_progress', 28);
+        $this->actingAs($this->manager)->getJson('/api/delivery/workspace')->assertOk()->assertJsonPath('delegated_kpis.0.confirmed_progress', 28);
+        $updatedParent = DB::table('delivery_tasks')->find($parent->id);
+        $this->actingAs($this->editor)->putJson('/api/planning/work/tasks/'.$parent->id.'/tasks', ['version' => $updatedParent->version, 'tasks' => [
+            ['title' => 'Overwrite started work', 'assignee_id' => $this->employee->id, 'weight' => 1],
+        ]])->assertConflict();
+        $this->assertDatabaseHas('task_submissions', ['id' => $submission->id, 'decision' => 'approved']);
+    }
+
+    public function test_editor_assignments_are_scoped_and_stale_versions_cannot_overwrite_hof_changes(): void
+    {
+        $this->postJson('/api/hof/kpi-assignments', $this->kpiPayload($this->manager))->assertOk();
+        $this->actingAs($this->editor)->postJson('/api/planning/work/kpi-assignments', $this->kpiPayload($this->manager, 1))->assertOk();
+        $this->postJson('/api/planning/work/kpi-assignments', $this->kpiPayload($this->manager, 1))->assertConflict();
+        $assignment = DB::table('work_assignments')->where('activity_code', 'ACT-A')->first();
+        $payload = ['plan_id' => $this->plan, 'activity_code' => 'ACT-A', 'source_revision' => 2, 'version' => $assignment->version, 'assignee_id' => $this->manager->id];
+        $this->postJson('/api/planning/work/assignments', $payload)->assertOk();
+        DB::table('department_memberships')->where('user_id', $this->editor->id)->where('department_id', $assignment->department_id)->delete();
+        $this->getJson('/api/planning/work')->assertOk()->assertJsonCount(0, 'activities')->assertJsonCount(0, 'kpis');
+        $this->postJson('/api/planning/work/kpi-assignments', $this->kpiPayload($this->manager, 2))->assertForbidden();
+        $this->postJson('/api/planning/work/assignments', [...$payload, 'version' => $assignment->version + 1])->assertForbidden();
+        $this->putJson('/api/planning/work/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version + 1, 'tasks' => [
+            ['title' => 'Foreign work', 'assignee_id' => $this->employee->id, 'weight' => 1],
+        ]])->assertForbidden();
+    }
+
+    public function test_complete_cio_workbook_example_publishes_all_ten_kpas_and_forty_two_activities(): void
+    {
+        $document = json_decode(file_get_contents(base_path('tests/Fixtures/cio-workflow-example.json')), true);
+        $department = (int) DB::table('departments')->where('code', 'IT')->value('id');
+        $document['owner_id'] = $this->hof->id;
+        foreach ($document['kpas'] as &$kpa) {
+            $kpa['department_id'] = $department;
+        }
+        unset($kpa);
+        $id = $this->actingAs($this->editor)->postJson('/api/planning/plans', $document)->assertCreated()->json('id');
+        $this->postJson('/api/planning/plans/'.$id.'/publish', ['revision' => 1])->assertOk();
+        $this->getJson('/api/planning/plans/'.$id)->assertOk()->assertJsonCount(10, 'plan.kpas')->assertJsonCount(0, 'issues');
+        $this->assertSame(42, DB::table('performance_plan_items')->where('plan_id', $id)->where('kind', 'activity')->count());
+        $this->assertEqualsWithDelta(1, array_sum(array_column($document['kpas'], 'weight')), .00001);
+        $this->actingAs($this->hof)->postJson('/api/hof/kpi-assignments', ['plan_id' => $id, 'kpi_code' => 'CIO-KPI-05', 'source_revision' => 2, 'version' => 0, 'assignee_id' => $this->manager->id])->assertOk();
+        $this->actingAs($this->manager)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(4, 'managed');
+        $sources = $this->actingAs($this->manager)->getJson('/api/allocations/people/'.$this->manager->id.'/2027')->assertOk()->json('entries');
+        $this->assertCount(1, $sources);
+        $this->assertSame('Linked KPA · delegated KPI', $sources[0]['kind']);
+    }
 }

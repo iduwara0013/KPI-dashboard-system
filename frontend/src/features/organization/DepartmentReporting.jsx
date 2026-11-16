@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Maximize2, Minimize2, MousePointer2, Network, Save } from 'lucide-react';
+import { ArrowLeft, Maximize2, Minimize2, MousePointer2, Network, Save, Search, X } from 'lucide-react';
 import { request } from '../../services/api.js';
 import { Avatar, Empty, ErrorBox, Field } from '../../components/ui.jsx';
 import { ReportingGraph, reportingRoles } from './OrganizationChart.jsx';
@@ -30,6 +30,7 @@ export default function DepartmentReporting({ data, onSaved }) {
   const [message, setMessage] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [memberQuery, setMemberQuery] = useState('');
+  const [membersOpen, setMembersOpen] = useState(false);
   const editor = useRef(null);
   const panel = useRef(null);
   const people = data.memberships.filter(membership => String(membership.department_id) === departmentId)
@@ -94,6 +95,7 @@ export default function DepartmentReporting({ data, onSaved }) {
     if (dirty || busy) return;
     setDepartmentId(value);
     setSelected(null);
+    setMembersOpen(false);
     setMessage('');
     setError(null);
     setMemberQuery('');
@@ -144,7 +146,7 @@ export default function DepartmentReporting({ data, onSaved }) {
   return <section ref={panel} className={`panel org-chart department-reporting ${expanded ? 'reporting-expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-modal={expanded ? true : undefined} aria-label={expanded ? `${department?.name || 'Department'} reporting editor` : undefined} onKeyDown={keyboard}>
     <div className="panel-heading"><div>
       <h2><Network size={19} /> {departmentId === 'overall' ? 'Reporting structure' : department?.name}</h2>
-      <p>{departmentId === 'overall' ? 'Chairman, Managing Director and departments' : 'Select a person on the map to set their role and reporting manager.'}</p>
+      {departmentId === 'overall' && <p>Chairman, Managing Director and departments</p>}
     </div>{departmentId !== 'overall' && <button data-editor-close className="btn btn-secondary" onClick={() => setExpanded(value => !value)}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}{expanded ? 'Use compact view' : 'Expand editor'}</button>}</div>
     <ErrorBox error={error} />
     {message && <p className="org-note" role="status">{message}</p>}
@@ -153,6 +155,7 @@ export default function DepartmentReporting({ data, onSaved }) {
         <option value="overall">Overall · Company structure</option>
         {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
       </select></label>
+      {departmentId !== 'overall' && <><button type="button" className="text-button company-back" aria-label="Overall structure" disabled={dirty || busy} onClick={() => chooseDepartment('overall')}><ArrowLeft size={15} />Overall</button><button type="button" className="btn btn-secondary" aria-expanded={membersOpen} onClick={() => setMembersOpen(value => !value)}><Search size={16} />Find person</button></>}
       <span>{departmentId === 'overall' ? `${departments.length} departments` : `${people.length} people · ${links.length} reporting links`}</span>
       {dirty && <div className="reporting-actions">
         <button className="btn btn-secondary" disabled={busy} onClick={() => { setDraft({}); setError(null); }}>Discard changes</button>
@@ -161,15 +164,15 @@ export default function DepartmentReporting({ data, onSaved }) {
     </div>
     {dirty && <p className="org-note" role="status">Unsaved changes for {pending.length} {pending.length === 1 ? 'person' : 'people'}. New lines are dashed. Save or discard to switch departments.</p>}
     {departmentId === 'overall' ? <OverallReporting data={data} departments={departments} onSelectDepartment={chooseDepartment} /> : <>
-    <div className="reporting-context-bar"><button type="button" className="text-button company-back" disabled={dirty || busy} onClick={() => chooseDepartment('overall')}><ArrowLeft size={15} />Overall structure</button><span><MousePointer2 size={15} />Select a card to edit · Changes save together</span></div>
+
     {!people.length ? <Empty icon={Network} title={departmentId ? 'No members in this department' : 'Choose an active department'} text="Department assignments are managed from People." /> : <>
-      <div className="reporting-layout">
+      <div className={`reporting-layout ${membersOpen ? 'reporting-settings-open' : 'reporting-map-only'}`}>
       <div className="reporting-map">
         <ReportingGraph key={departmentId} people={people} links={links.filter(link => people.some(item => item.id === link.manager_id))} showUnassigned editableLayout layoutKey={departmentId}
-          selected={selected} onSelect={setSelected} />
+          selected={selected} onSelect={id => { setSelected(id); setMembersOpen(true); }} />
       </div>
-      <div className="reporting-editor" ref={editor}>
-        <h3>Person & reporting</h3>
+      <div className="reporting-editor" ref={editor} hidden={!membersOpen}>
+        <div className="reporting-settings-heading"><h3>Person & reporting</h3><button type="button" className="icon-button" aria-label="Close person settings" onClick={() => setMembersOpen(false)}><X size={19} /></button></div>
         <Field label="Search department members"><input type="search" value={memberQuery} onChange={event => setMemberQuery(event.target.value)} placeholder="Name, EPF or designation" /></Field>
         <Field label="Find a department member">
           <select value={selected ?? ''} onChange={event => setSelected(event.target.value ? Number(event.target.value) : null)}>

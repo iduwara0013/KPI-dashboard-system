@@ -43,26 +43,36 @@ export function reportingLayout(people, links, collapsed, canvasWidth, heights =
   }
   const children = person => connected.filter(child => primary.get(String(child.id)) === String(person.id));
   const nodeHeight = id => Math.max(104, Number(heights[id]) || 160);
+  // Reserve a horizontal band for each subtree and a measured row per level.
+  const levelTops = [30];
+  const maxLevel = Math.max(0, ...connected.map(person => levels[person.id]));
+  for (let level = 0; level < maxLevel; level++) {
+    const row = connected.filter(person => levels[person.id] === level);
+    levelTops[level + 1] = levelTops[level] + Math.max(104, ...row.map(person => nodeHeight(person.id))) + 80;
+  }
   const spans = {};
   function span(person) {
     if (spans[person.id] !== undefined) return spans[person.id];
     const descendants = children(person);
-    return spans[person.id] = Math.max(nodeHeight(person.id), descendants.reduce((sum, child) => sum + span(child), 0) + Math.max(0, descendants.length - 1) * gap);
+    return spans[person.id] = Math.max(cardWidth, descendants.reduce((sum, child) => sum + span(child), 0) + Math.max(0, descendants.length - 1) * gap);
   }
   const positions = {};
-  function place(person, top) {
-    positions[person.id] = { x: 30 + levels[person.id] * 330, y: top + (span(person) - nodeHeight(person.id)) / 2 };
+  function place(person, left) {
+    positions[person.id] = { x: left + (span(person) - cardWidth) / 2, y: levelTops[levels[person.id]] };
     const descendants = children(person);
     const total = descendants.reduce((sum, child) => sum + span(child), 0) + Math.max(0, descendants.length - 1) * gap;
-    let cursor = top + (span(person) - total) / 2;
+    let cursor = left + (span(person) - total) / 2;
     for (const child of descendants) { place(child, cursor); cursor += span(child) + gap; }
   }
-  let top = 30;
-  for (const root of connected.filter(person => !primary.has(String(person.id)))) { place(root, top); top += span(root) + gap; }
-  const columns = Math.max(1, Math.floor((canvasWidth - 30) / 330));
+  const forest = connected.filter(person => !primary.has(String(person.id)));
+  const forestWidth = forest.reduce((sum, root) => sum + span(root), 0) + Math.max(0, forest.length - 1) * gap;
+  let left = Math.max(30, (canvasWidth - forestWidth) / 2);
+  for (const root of forest) { place(root, left); left += span(root) + gap; }
+  let top = Math.max(30, ...connected.map(person => positions[person.id].y + nodeHeight(person.id) + 70));
+  const columns = Math.max(1, Math.floor((canvasWidth - 60 + gap) / (cardWidth + gap)));
   for (let index = 0; index < loose.length; index += columns) {
     const row = loose.slice(index, index + columns);
-    for (const [column, person] of row.entries()) positions[person.id] = { x: 30 + column * 330, y: top };
+    for (const [column, person] of row.entries()) positions[person.id] = { x: 30 + column * (cardWidth + gap), y: top };
     top += Math.max(...row.map(person => nodeHeight(person.id))) + gap;
   }
   for (const id of Object.keys(positions)) {
@@ -74,18 +84,21 @@ export function reportingLayout(people, links, collapsed, canvasWidth, heights =
 }
 
 export function reportingConnector(start, end, startHeight = 160, endHeight = 160) {
-  if (end.x >= start.x + cardWidth + 20) {
-    const sx = start.x + cardWidth, sy = start.y + startHeight / 2, ey = end.y + endHeight / 2, middle = (sx + end.x) / 2;
-    if (end.x - start.x > 500) return `M ${sx} ${sy} H ${sx + 26} V 8 H ${end.x - 26} V ${ey} H ${end.x}`;
-    return `M ${sx} ${sy} H ${middle} V ${ey} H ${end.x}`;
-  }
-  if (start.x >= end.x + cardWidth + 20) {
-    const ex = end.x + cardWidth, sy = start.y + startHeight / 2, ey = end.y + endHeight / 2, middle = (start.x + ex) / 2;
-    if (start.x - end.x > 500) return `M ${start.x} ${sy} H ${start.x - 26} V 8 H ${ex + 26} V ${ey} H ${ex}`;
-    return `M ${start.x} ${sy} H ${middle} V ${ey} H ${ex}`;
-  }
-  const downward = end.y + endHeight / 2 >= start.y + startHeight / 2;
   const sx = start.x + cardWidth / 2, ex = end.x + cardWidth / 2;
-  const sy = downward ? start.y + startHeight : start.y, ey = downward ? end.y : end.y + endHeight, middle = (sy + ey) / 2;
-  return `M ${sx} ${sy} V ${middle} H ${ex} V ${ey}`;
+  if (end.y >= start.y + startHeight + 20) {
+    const sy = start.y + startHeight, ey = end.y, middle = sy + 30;
+    // Skip-level links use the outside rail rather than crossing intervening cards.
+    if (ey - sy > 300) return `M ${sx} ${sy} V ${middle} H 8 V ${ey - 26} H ${ex} V ${ey}`;
+    return `M ${sx} ${sy} V ${middle} H ${ex} V ${ey}`;
+  }
+  if (start.y >= end.y + endHeight + 20) {
+    const sy = start.y, ey = end.y + endHeight, middle = sy - 30;
+    return `M ${sx} ${sy} V ${middle} H ${ex} V ${ey}`;
+  }
+  // Manual dragging can put cards alongside each other.
+  const rightward = ex >= sx;
+  const fromX = rightward ? start.x + cardWidth : start.x;
+  const toX = rightward ? end.x : end.x + cardWidth;
+  const sy = start.y + startHeight / 2, ey = end.y + endHeight / 2, middle = (fromX + toX) / 2;
+  return `M ${fromX} ${sy} H ${middle} V ${ey} H ${toX}`;
 }
