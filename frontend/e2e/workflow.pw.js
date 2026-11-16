@@ -895,3 +895,101 @@ test('CIO workbook example delegates a linked KPA and department editor edits an
 
   await Promise.all([editor.context.close(), hof.context.close(), manager.context.close(), employee.context.close(), admin.context.close(), md.context.close()]);
 });
+
+test('full KPI moves through reporting managers as linked KPAs and approved work rolls up once', async ({ browser }) => {
+  const admin = await actor(browser, 'admin@pulse.test');
+  const editor = await actor(browser, 'emp011@example.test');
+  const hof = await actor(browser, 'emp001@example.test');
+  const manager = await actor(browser, 'emp004@example.test');
+  const org = await workspace(admin.context, 'admin');
+  const department = org.departments.find(row => row.code === 'IT').id;
+  const top = org.users.find(row => row.employee_number === 'EMP004');
+  const owner = org.users.find(row => row.employee_number === 'EMP001');
+  const editorRecord = org.users.find(row => row.employee_number === 'EMP011');
+  await mutate(admin.context, `/api/admin/users/${editorRecord.id}`, { ...editorRecord, memberships: org.departments.map(row => ({ department_id: row.id, responsibility: 'employee', manager_ids: [] })) }, 'put');
+  async function create(number, name, responsibility, reportsTo) {
+    const email = `handoff.${number.toLowerCase()}@example.test`;
+    await mutate(admin.context, '/api/admin/users', { name, email, employee_number: number, designation: responsibility === 'manager' ? 'IT Manager' : 'Technical Assistant', grade: 'A5', system_role: 'member', is_active: true, password,
+      memberships: [{ department_id: department, responsibility, manager_ids: [reportsTo] }] });
+    const updated = await workspace(admin.context, 'admin');
+    return updated.users.find(row => row.employee_number === number);
+  }
+  const nextRecord = await create('CHAIN-B', 'Second reporting manager', 'manager', top.id);
+  const thirdRecord = await create('CHAIN-C', 'Third reporting manager', 'manager', nextRecord.id);
+  const workerRecord = await create('CHAIN-LEAF', 'Chain delivery employee', 'employee', thirdRecord.id);
+  const next = await actor(browser, nextRecord.email);
+  const third = await actor(browser, thirdRecord.email);
+  const employee = await actor(browser, workerRecord.email);
+  const year = 2098;
+  const plan = await mutate(editor.context, '/api/planning/plans', { code: 'KPI-HANDOFF-2098', title: 'Manager KPI handoff', year, owner_id: owner.id, kpas: [{ code: 'CHAIN-KPA', title: 'IT delivery', department_id: department, weight: 1, kpis: [
+    { code: 'CHAIN-NETWORK', title: 'Network handoff KPI', weight: .7, target_value: 1, target_unit: 'count', frequency: 'On completion', direction: 'higher', activities: [{ code: 'CHAIN-INSTALL', title: 'Install handoff equipment', weight: .7 }, { code: 'CHAIN-DOCS', title: 'Document handoff delivery', weight: .3 }] },
+    { code: 'CHAIN-RETAINED', title: 'Retained management KPI', weight: .3, target_value: 1, target_unit: 'count', frequency: 'On completion', direction: 'higher', activities: [{ code: 'CHAIN-REPORT', title: 'Management report', weight: 1 }] },
+  ] }] });
+  await mutate(editor.context, `/api/planning/plans/${plan.id}/publish`, { revision: 1 });
+  for (const code of ['CHAIN-NETWORK', 'CHAIN-RETAINED']) await mutate(hof.context, '/api/hof/kpi-assignments', { plan_id: plan.id, kpi_code: code, source_revision: 2, version: 0, assignee_id: top.id });
+  async function forward(actor, recipient) {
+    await actor.page.goto('/delivery/kpis');
+    await actor.page.getByLabel('Delivery year').selectOption(String(year));
+    const card = actor.page.locator('.mixed-kpi-card').filter({ has: actor.page.getByRole('heading', { name: 'Network handoff KPI', exact: true }) });
+    await card.getByRole('button', { name: 'Assign full KPI', exact: true }).click();
+    const dialog = actor.page.getByRole('dialog', { name: 'Assign full KPI', exact: true });
+    await dialog.getByLabel('Assign full KPI to').selectOption(String(recipient.id));
+    await dialog.getByLabel('KPI assignment deadline').fill(`${year}-12-01`);
+    await dialog.getByLabel('Instructions').fill('Continue through your reporting team.');
+    await dialog.getByRole('button', { name: 'Assign full KPI', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(card).toContainText(`Assigned onward to ${recipient.name}`);
+    await expect(card.getByRole('button', { name: 'Assign full KPI', exact: true })).toBeDisabled();
+  }
+  await forward(manager, nextRecord);
+  await expect(manager.page.locator('.mixed-kpi-card')).toHaveCount(2);
+  const nextData = await workspace(next.context);
+  expect(nextData.managed).toHaveLength(2);
+  expect(nextData.tasks).toHaveLength(0);
+  expect(nextData.delegated_kpis).toHaveLength(1);
+  const notifications = await (await next.context.request.get('/api/notifications')).json();
+  const notification = notifications.items.find(row => row.target.handoff_id === nextData.delegated_kpis[0].source_id);
+  expect(notification.available).toBeTruthy();
+  await forward(next, thirdRecord);
+  await next.page.screenshot({ path: 'test-results/manager-kpi-handoff.png', fullPage: true });
+  await next.page.setViewportSize({ width: 390, height: 844 });
+  expect(await next.page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await next.page.screenshot({ path: 'test-results/manager-kpi-handoff-mobile.png', fullPage: true });
+  await third.page.goto('/delivery/kpis');
+  await third.page.getByLabel('Delivery year').selectOption(String(year));
+  await expect(third.page.locator('.mixed-kpi-card')).toContainText('Assigned by Second reporting manager');
+  await expect(third.page.locator('.linked-kpa-mapping')).toContainText('Manager KPI');
+  await third.page.goto('/delivery/activities');
+  await third.page.getByLabel('Delivery year').selectOption(String(year));
+  await third.page.getByLabel('Search delivery work').fill('Install handoff equipment');
+  await expect(third.page.locator('.assigned-kpi > summary')).toContainText('MY LINKED KPA');
+  await third.page.getByRole('button', { name: 'Create task breakdown', exact: true }).click();
+  const breakdown = third.page.getByRole('dialog', { name: 'Activity task breakdown', exact: true });
+  await breakdown.getByRole('button', { name: 'Add task', exact: true }).click();
+  await breakdown.getByLabel('Task 1 title').fill('Chain technical delivery');
+  await breakdown.getByLabel('Task 1 owner').selectOption(String(workerRecord.id));
+  await breakdown.getByLabel('Task 1 weight (%)').fill('70');
+  await breakdown.getByRole('button', { name: 'Add task', exact: true }).click();
+  await breakdown.getByLabel('Task 2 title').fill('Chain manager verification');
+  await breakdown.getByLabel('Task 2 weight (%)').fill('30');
+  await breakdown.getByRole('button', { name: 'Save 100% breakdown', exact: true }).click();
+  await expect(breakdown).toHaveCount(0);
+  const delivery = await workspace(employee.context);
+  const leaf = delivery.tasks.find(row => row.title === 'Chain technical delivery');
+  await mutate(employee.context, `/api/delivery/tasks/${leaf.id}/submit`, { version: leaf.version, evidence: 'Network installed and verification attached.' });
+  const review = await workspace(third.context);
+  const task = review.reviews.find(row => row.id === leaf.id);
+  const submission = review.submissions.find(row => row.task_id === leaf.id);
+  await mutate(third.context, `/api/delivery/submissions/${submission.id}/review`, { version: task.version, decision: 'approved' });
+  for (const actor of [next, third]) {
+    const current = await workspace(actor.context);
+    expect(current.personal_scores[year].responsibility_count).toBe(1);
+    expect(current.personal_scores[year].confirmed_completion).toBe(49);
+    expect(current.delegated_kpis[0].confirmed_progress).toBe(49);
+  }
+  const upstream = await workspace(manager.context);
+  expect(upstream.personal_scores[year].confirmed_completion).toBe(34.3);
+  const source = await workspace(hof.context, 'hof');
+  expect(source.kpis.find(row => row.kpi_code === 'CHAIN-NETWORK').confirmed_progress).toBe(49);
+  await Promise.all([admin, editor, hof, manager, next, third, employee].map(actor => actor.context.close()));
+});

@@ -6,6 +6,7 @@ use App\Http\Controllers\ExcelPlanImportController;
 use App\Http\Controllers\ExtraWorkController;
 use App\Http\Controllers\HofWorkController;
 use App\Http\Controllers\KpiAssignmentController;
+use App\Http\Controllers\KpiHandoffController;
 use App\Http\Controllers\MdDashboardController;
 use App\Http\Controllers\MonthlyKpiResultController;
 use App\Http\Controllers\NotificationController;
@@ -72,6 +73,7 @@ Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecuti
     });
     Route::middleware(['auth', RequireDeliveryAccess::class])->prefix('delivery')->group(function () {
         Route::get('/workspace', [DeliveryController::class, 'workspace']);
+        Route::post('/kpi-handoffs', [KpiHandoffController::class, 'assign'])->middleware('throttle:30,1');
         Route::post('/personal-plan/start', [DeliveryController::class, 'startPersonalWork'])->middleware('throttle:30,1');
         Route::put('/assignments/{assignment}/tasks', [DeliveryController::class, 'breakdown'])->whereNumber('assignment')->middleware('throttle:30,1');
         Route::put('/tasks/{task}/deadline', [DeliveryController::class, 'extendDeadline'])->whereNumber('task')->middleware('throttle:30,1');

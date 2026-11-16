@@ -82,6 +82,7 @@ class DeliveryController extends Controller
             $valid = ! DB::table('delivery_tasks')->where('assignment_id', $assignment->id)
                 ->where('generation', $assignment->delivery_generation)->where('is_active', true)->get()
                 ->contains(fn ($task) => ! $this->taskEligible($task, $assignment));
+            $valid = $valid && app(KpiHandoffController::class)->activityEligible($assignment);
         }
         if ($valid) {
             $replacements = DB::table('work_replacements as r')->join('delivery_tasks as t', 't.id', '=', 'r.task_id')
@@ -126,6 +127,9 @@ class DeliveryController extends Controller
         $own = [];
         $reviews = [];
         $taskIds = [];
+        $delegatedKpis = app(KpiAssignmentController::class)->forRecipient($user);
+        $handoffTasks = collect($delegatedKpis)->filter(fn ($kpi) => $kpi['handoff_kind'] === 'handoff')
+            ->flatMap(fn ($kpi) => array_map(fn ($row) => ['task_id' => $row['handoff_task_id'], 'link_key' => $kpi['link_key'], 'valid' => $kpi['valid']], $kpi['activities']))->keyBy('task_id');
         $candidateIds = DB::table('delivery_tasks')->where('is_active', true)
             ->where(fn ($query) => $query->where('assignee_id', $user)->orWhere('reviewer_id', $user))->pluck('assignment_id');
         $assignments = DB::table('work_assignments')->where(fn ($query) => $query->where('assignee_id', $user)->orWhereIn('id', $candidateIds))->get();
@@ -151,6 +155,7 @@ class DeliveryController extends Controller
                 'recipient_role' => app(HofWorkController::class)->recipientRole((int) $assignment->owner_id, (int) $assignment->assignee_id, (int) $assignment->department_id),
                 'ownership_mode' => $assignment->ownership_mode,
                 'delegation_id' => $assignment->delegation_id,
+                'linked_kpa_key' => $assignment->ownership_mode === 'kpi' ? 'kpi:'.$assignment->delegation_id : null,
             ];
             $allTasks = DB::table('delivery_tasks')->where('assignment_id', $assignment->id)
                 ->where('generation', $assignment->delivery_generation)->where('is_active', true)->orderBy('id')->get();
@@ -178,6 +183,7 @@ class DeliveryController extends Controller
             if ((int) $assignment->assignee_id === $user && ($this->membership($user, (int) $assignment->department_id, 'manager') || ($context['valid'] && $hasReports))) {
                 $locked = $allTasks->contains(fn ($task) => (float) $task->reported_progress > 0)
                     || DB::table('task_submissions')->whereIn('task_id', $allTasks->pluck('id'))->exists()
+                    || DB::table('kpi_handoff_activities')->whereIn('task_id', $allTasks->pluck('id'))->exists()
                     || $allTasks->whereNotNull('parent_task_id')->isNotEmpty();
                 $managed[] = [...$parent, 'tasks' => $serialized->whereNull('parent_task_id')->values(), 'breakdown_locked' => $locked];
                 $taskIds = [...$taskIds, ...$allTasks->pluck('id')->all()];
@@ -187,7 +193,32 @@ class DeliveryController extends Controller
             }
             foreach ($serialized as $task) {
                 if ((int) $task['assignee_id'] === $user && $task['assignee_eligible']) {
-                    $own[] = [...$task, 'parent' => $parent];
+                    $wholeActivity = (int) $task['manager_id'] !== $user && $this->membership($user, (int) $assignment->department_id, 'manager');
+                    $ancestor = $task;
+                    while ($wholeActivity && $ancestor) {
+                        $wholeActivity = abs((float) $ancestor['weight'] - 1) < 0.00005 && $ancestor['title'] === $parent['activity'];
+                        $ancestor = $ancestor['parent_task_id'] ? $serialized->firstWhere('id', $ancestor['parent_task_id']) : null;
+                    }
+                    if ($handoffTasks->has($task['id']) || $wholeActivity) {
+                        $link = $handoffTasks->get($task['id']) ?? ['link_key' => null, 'valid' => true];
+                        $children = $serialized->where('parent_task_id', $task['id'])->values();
+                        $managed[] = [...$parent, 'id' => $task['id'], 'work_assignment_id' => $assignment->id, 'task_branch' => true,
+                            'version' => (int) $task['version'], 'manager_id' => $user, 'assigned_by_id' => $task['manager_id'],
+                            'linked_kpa_key' => $link['link_key'], 'tasks' => $children,
+                            'delegation_id' => $handoffTasks->has($task['id']) ? $parent['delegation_id'] : null,
+                            'reported_progress' => $task['reported_progress'], 'confirmed_progress' => $link['valid'] ? $task['confirmed_progress'] : 0,
+                            'valid' => $link['valid'], 'due_date' => $task['due_date'], 'instructions' => $task['instructions'], 'timeliness' => $task['timeliness'],
+                            'allocation_ready' => $children->isNotEmpty() && abs($children->sum('weight') - 1) < 0.00005,
+                            'breakdown_locked' => $task['breakdown_locked'] || $children->contains(fn ($child) => $child['has_children'] || (float) $child['reported_progress'] > 0)
+                                || DB::table('kpi_handoff_activities')->whereIn('task_id', $children->pluck('id'))->exists()
+                                || DB::table('task_submissions')->whereIn('task_id', $children->pluck('id'))->exists()];
+                        $taskIds = [...$taskIds, ...$children->pluck('id')->all()];
+                        if (! $handoffTasks->has($task['id'])) {
+                            $own[] = [...$task, 'parent' => $parent];
+                        }
+                    } else {
+                        $own[] = [...$task, 'parent' => $parent];
+                    }
                     $taskIds[] = $task['id'];
                 }
                 if (! $task['has_children'] && (int) $task['reviewer_id'] === $user && (int) $task['assignee_id'] !== $user && $task['assignee_eligible'] && $task['status'] === 'submitted') {
@@ -202,7 +233,7 @@ class DeliveryController extends Controller
             $join->on('m.user_id', '=', 'r.user_id')->on('m.department_id', '=', 'r.department_id');
         })->join('users as u', 'u.id', '=', 'r.user_id')->join('departments as d', 'd.id', '=', 'r.department_id')
             ->where('r.manager_id', $user)->whereIn('m.responsibility', ['hof', 'manager', 'employee'])->where('u.is_active', true)->where('u.system_role', 'member')->where('d.is_active', true)
-            ->orderBy('u.name')->get(['u.id', 'u.name', 'u.employee_number', 'u.designation', 'r.department_id']);
+            ->orderBy('u.name')->get(['u.id', 'u.name', 'u.employee_number', 'u.designation', 'r.department_id', 'm.responsibility']);
         $submissions = DB::table('task_submissions')->whereIn('task_id', array_unique($taskIds))->orderByDesc('id')->get()->map(function ($submission) {
             $submission->retain_timeliness = (bool) $submission->retain_timeliness;
 
@@ -211,8 +242,8 @@ class DeliveryController extends Controller
         $peopleIds = collect($managed)->flatMap(fn ($parent) => collect($parent['tasks'])->pluck('assignee_id')->push($parent['owner_id']))
             ->merge(collect($own)->pluck('reviewer_id'))->merge(collect($own)->pluck('manager_id'))
             ->merge(collect($reviews)->pluck('assignee_id'))->unique();
-        $delegatedKpis = app(KpiAssignmentController::class)->forRecipient($user);
         $peopleIds = $peopleIds->merge(collect($delegatedKpis)->flatMap(fn ($kpi) => collect($kpi['activities'])->map(fn ($row) => $row['assignment']?->assignee_id)->push($kpi['delegation']->owner_id)))->filter()->unique();
+        $peopleIds = $peopleIds->merge(collect($delegatedKpis)->pluck('forwarded_to_id'))->filter()->unique();
         $years = collect($managed)->pluck('year')->merge(collect($own)->pluck('parent.year'))
             ->merge(collect($delegatedKpis)->pluck('year'))->filter()->unique();
         $personalScores = $years->mapWithKeys(fn ($year) => [
@@ -307,6 +338,7 @@ class DeliveryController extends Controller
             abort_if($branch && ((float) $branch->reported_progress > 0 || DB::table('task_submissions')->where('task_id', $branch->id)->exists()), 409, 'Work that has started cannot be divided again.');
             $existing = DB::table('delivery_tasks')->where('assignment_id', $assignment)->where('generation', $parent->delivery_generation)
                 ->where('is_active', true)->where('parent_task_id', $parentTask)->get()->keyBy('id');
+            abort_if(DB::table('kpi_handoff_activities')->whereIn('task_id', $existing->keys())->exists(), 409, 'This activity belongs to a full KPI assignment. Continue in the receiving manager’s linked KPA.');
             abort_if(DB::table('work_replacements')->whereIn('task_id', $existing->keys()->when($parentTask !== null, fn ($ids) => $ids->push($parentTask)))->exists(), 409, 'Approved replacement work keeps its original task allocation and history.');
             abort_if(DB::table('delivery_tasks')->whereIn('parent_task_id', $existing->keys())->where('is_active', true)->exists(), 409, 'A team member has already divided this work. Update that branch directly.');
             abort_if($existing->contains(fn ($task) => (float) $task->reported_progress > 0) || DB::table('task_submissions')->whereIn('task_id', $existing->keys())->exists(), 409, 'The task breakdown is locked after work starts. Ask the HOF to review the assignment if its scope must change.');
@@ -335,7 +367,7 @@ class DeliveryController extends Controller
                     $id = DB::table('delivery_tasks')->insertGetId([...$attributes, 'parent_task_id' => $parentTask, 'assignment_id' => $parent->id, 'generation' => $parent->delivery_generation, 'manager_id' => $actor, 'created_at' => now()]);
                 }
                 $seen[] = $id;
-                if ((int) $task['assignee_id'] !== $request->user()->id && (! isset($task['id']) || (int) $existing[$id]->assignee_id !== (int) $task['assignee_id'] || $existing[$id]->title !== $task['title'] || $existing[$id]->due_date != ($task['due_date'] ?? null))) {
+                if (! $request->attributes->get('full_kpi_forward') && (int) $task['assignee_id'] !== $request->user()->id && (! isset($task['id']) || (int) $existing[$id]->assignee_id !== (int) $task['assignee_id'] || $existing[$id]->title !== $task['title'] || $existing[$id]->due_date != ($task['due_date'] ?? null))) {
                     NotificationController::send((int) $task['assignee_id'], 'task-assigned:'.$id.':'.($existing[$id]->version ?? 0), 'assignment', 'Task assigned or updated: '.$task['title'], ['workspace' => 'delivery', 'page' => 'tasks', 'search' => $task['title']]);
                 }
             }

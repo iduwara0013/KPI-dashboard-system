@@ -109,6 +109,8 @@ class NotificationController extends Controller
             $target['assignment_id'] = $target['assignment_id'] ?? $id;
         } elseif ($parts[0] === 'kpi-assigned') {
             $target['delegation_id'] = $target['delegation_id'] ?? $id;
+        } elseif ($parts[0] === 'kpi-handoff') {
+            $target['handoff_id'] = $target['handoff_id'] ?? $id;
         }
 
         return $target;
@@ -164,6 +166,11 @@ class NotificationController extends Controller
                         ->where('assignee_id', $row->user_id)->whereNull('parent_task_id')->value('id');
                 }
             }
+        } elseif (! empty($target['handoff_id'])) {
+            $handoff = collect(app(KpiHandoffController::class)->forRecipient((int) $row->user_id))->firstWhere('source_id', (int) $target['handoff_id']);
+            $available = $handoff && $handoff['valid'];
+            $required = $available && (float) $handoff['confirmed_progress'] < 100;
+            $state = $required ? 'In progress' : 'Completed';
         } elseif (! empty($target['delegation_id'])) {
             $delegation = DB::table('kpi_delegations')->find($target['delegation_id']);
             $assignments = $delegation ? DB::table('work_assignments')->where('delegation_id', $delegation->id)->where('assignee_id', $row->user_id)->get() : collect();

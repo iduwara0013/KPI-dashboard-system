@@ -201,22 +201,25 @@ class PerformancePlanController extends Controller
             ->get(['id', 'version', 'parent_task_id', 'status', 'is_active']);
         $submissions = DB::table('task_submissions')->whereIn('task_id', $taskIds)->orderBy('id')->get(['id', 'decision']);
         $delegations = DB::table('kpi_delegations')->where('plan_id', $plan->id)->orderBy('id')->get(['id', 'version', 'generation']);
+        $handoffs = DB::table('kpi_handoffs')->whereIn('root_delegation_id', $delegations->pluck('id'))->orderBy('id')->get(['id', 'version']);
         $monthly = DB::table('monthly_kpi_submissions')->where('plan_id', $plan->id)->orderBy('id')->get(['id', 'status']);
         $counts = [
             'items' => DB::table('performance_plan_items')->where('plan_id', $plan->id)->count(),
             'revisions' => DB::table('performance_plan_versions')->where('plan_id', $plan->id)->count(),
             'assignments' => $assignments->count(), 'tasks' => $tasks->count(), 'submissions' => $submissions->count(),
             'kpi_assignments' => $delegations->count(), 'monthly_results' => $monthly->count(),
+            'manager_kpi_assignments' => $handoffs->count(),
         ];
 
         return [
             'counts' => $counts,
             'token' => hash('sha256', json_encode([
                 $plan->id, $plan->revision, $plan->published_revision, $counts,
-                $assignments, $tasks, $submissions, $delegations, $monthly,
+                $assignments, $tasks, $submissions, $delegations, $handoffs, $monthly,
             ], JSON_THROW_ON_ERROR)),
             'assignment_ids' => $assignments->pluck('id')->all(), 'task_ids' => $tasks->pluck('id')->all(),
             'submission_ids' => $submissions->pluck('id')->all(), 'delegation_ids' => $delegations->pluck('id')->all(),
+            'handoff_ids' => $handoffs->pluck('id')->all(),
         ];
     }
 
@@ -243,6 +246,8 @@ class PerformancePlanController extends Controller
             $document = $this->document($record);
             $assignmentIds = DB::table('work_assignments')->where('plan_id', $plan)->select('id');
             $taskIds = DB::table('delivery_tasks')->whereIn('assignment_id', $assignmentIds)->select('id');
+            DB::table('kpi_handoff_activities')->whereIn('handoff_id', $details['handoff_ids'])->delete();
+            DB::table('kpi_handoffs')->whereIn('id', $details['handoff_ids'])->delete();
             DB::table('task_submissions')->whereIn('task_id', $taskIds)->delete();
             DB::table('delivery_tasks')->whereIn('assignment_id', $assignmentIds)->delete();
             DB::table('work_assignments')->where('plan_id', $plan)->delete();
@@ -276,6 +281,7 @@ class PerformancePlanController extends Controller
         $sources = [
             'hof' => [$plan], 'assignment' => $details['assignment_ids'], 'task' => $details['task_ids'],
             'kpi' => $details['delegation_ids'],
+            'handoff' => $details['handoff_ids'],
         ];
         $proposalIds = DB::table('personal_weight_proposals')->get(['id', 'source_key'])->filter(function ($proposal) use ($sources): bool {
             $parts = explode(':', $proposal->source_key);
@@ -287,6 +293,7 @@ class PerformancePlanController extends Controller
             'hof-reviewer' => $details['assignment_ids'], 'task-assigned' => $details['task_ids'],
             'submitted' => $details['task_ids'], 'task-overdue' => $details['task_ids'],
             'reviewed' => $details['submission_ids'], 'kpi-assigned' => $details['delegation_ids'],
+            'kpi-handoff' => $details['handoff_ids'],
         ];
         $notificationIds = DB::table('work_notifications')->get(['id', 'event_key'])->filter(function ($notification) use ($events): bool {
             $parts = explode(':', $notification->event_key);

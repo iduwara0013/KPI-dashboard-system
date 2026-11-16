@@ -55,12 +55,12 @@ class KpiAssignmentController extends Controller
         foreach (DB::table('performance_plans')->whereIn('id', $delegations->pluck('plan_id')->unique())->get() as $plan) {
             foreach ($this->summaries($this->rowsForPlan($plan), $delegations) as $summary) {
                 if ($summary['delegation']) {
-                    $result[] = $summary;
+                    $result[] = app(KpiHandoffController::class)->decorate($summary);
                 }
             }
         }
 
-        return $result;
+        return [...$result, ...app(KpiHandoffController::class)->forRecipient($user)];
     }
 
     public function assign(Request $request): JsonResponse

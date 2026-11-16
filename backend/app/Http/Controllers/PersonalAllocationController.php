@@ -67,7 +67,7 @@ class PersonalAllocationController extends Controller
                 continue;
             }
             $covered[] = $kpi['plan_id'].':'.$kpi['kpi_code'];
-            $sources[] = $this->source('kpi:'.$kpi['delegation']->id.':'.$kpi['delegation']->generation, 'Linked KPA · delegated KPI', $kpi['kpi_title'], $kpi['department_id'], $kpi['valid'], $kpi['source_signature'], $kpi['confirmed_progress'], $kpi['timeliness'] ?? []);
+            $sources[] = $this->source($kpi['allocation_key'] ?? 'kpi:'.$kpi['delegation']->id.':'.$kpi['delegation']->generation, 'Linked KPA · delegated KPI', $kpi['kpi_title'], $kpi['department_id'], $kpi['valid'], $kpi['source_signature'], $kpi['confirmed_progress'], $kpi['timeliness'] ?? []);
             $sources[array_key_last($sources)]['contribution_weight'] = $kpi['personal_weight'];
         }
         foreach (DB::table('work_assignments')->where('assignee_id', $owner)->where('recipient_role', 'manager')->get() as $assignment) {
