@@ -74,6 +74,11 @@ class HofWorkController extends Controller
 
     public function activities(object $plan): array
     {
+        return WorkReadCache::remember('activities:'.$plan->id.':'.$plan->published_revision, fn () => $this->activityRows($plan));
+    }
+
+    private function activityRows(object $plan): array
+    {
         if ($plan->published_revision === null) {
             return [];
         }

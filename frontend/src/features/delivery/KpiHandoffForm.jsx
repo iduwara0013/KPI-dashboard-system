@@ -7,13 +7,13 @@ import WorkSource from './WorkSource.jsx';
 
 export default function KpiHandoffForm({ kpi, people, onClose, onSaved }) {
   const managers = people.filter(person => same(person.department_id, kpi.department_id) && person.responsibility === 'manager');
-  const [assignee, setAssignee] = useState('');
-  const [due, setDue] = useState(() => kpi.activities.map(row => row.assignment?.due_date?.slice(0, 10) || '').filter(Boolean).sort().at(-1) || '');
-  const [instructions, setInstructions] = useState(''), [error, setError] = useState(null), [busy, setBusy] = useState(false);
-  async function submit(event) {
+  const [assignee, setAssignee] = useState(String(kpi.forwarded_to_id || ''));
+  const [due, setDue] = useState(() => kpi.forwarded_handoff_id ? kpi.forwarded_due_date?.slice(0, 10) || '' : kpi.activities.map(row => row.assignment?.due_date?.slice(0, 10) || '').filter(Boolean).sort().at(-1) || '');
+  const [instructions, setInstructions] = useState(kpi.forwarded_instructions || ''), [error, setError] = useState(null), [busy, setBusy] = useState(false);
+  async function submit(event, mode = 'edit') {
     event.preventDefault(); setBusy(true); setError(null);
     try {
-      const result = await request('/delivery/kpi-handoffs', { method: 'POST', body: { source_kind: kpi.handoff_kind, source_id: kpi.source_id, version: Number(kpi.delegation.version), assignee_id: Number(assignee), due_date: due || null, instructions: instructions || null } });
+      const result = await request(kpi.forwarded_handoff_id ? `/delivery/kpi-handoffs/${kpi.forwarded_handoff_id}` : '/delivery/kpi-handoffs', { method: 'POST', body: { source_kind: kpi.handoff_kind, source_id: kpi.source_id, mode, version: Number(kpi.forwarded_handoff_id ? kpi.forwarded_version : kpi.delegation.version), assignee_id: Number(assignee), due_date: due || null, instructions: instructions || null } });
       await onSaved(result.message);
     } catch (err) { setError(err); } finally { setBusy(false); }
   }
@@ -26,5 +26,5 @@ export default function KpiHandoffForm({ kpi, people, onClose, onSaved }) {
       <Field label="KPI assignment deadline"><input type="date" value={due} disabled={busy} onChange={event => setDue(event.target.value)} /></Field>
       <Field label="Instructions"><textarea rows={3} maxLength={1000} disabled={busy} value={instructions} onChange={event => setInstructions(event.target.value)} /></Field>
     </>}
-  </div><div className="modal-footer"><button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || !assignee}>{busy ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />}Assign full KPI</button></div></form>;
+  </div><div className="modal-footer">{kpi.forwarded_handoff_id && <button type="button" className="btn btn-secondary" disabled={busy} onClick={event => submit(event, 'cancel')}>Cancel KPI assignment</button>}<button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || !assignee}>{busy ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />}{kpi.forwarded_handoff_id ? 'Save KPI assignment' : 'Assign full KPI'}</button></div></form>;
 }

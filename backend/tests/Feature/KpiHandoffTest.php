@@ -79,6 +79,9 @@ class KpiHandoffTest extends TestCase
         $this->assertSame('Network improvement', $received['delegated_kpis'][0]['kpi_title']);
         $this->assertTrue($received['delegated_kpis'][0]['can_forward']);
         $this->assertTrue($received['managed'][0]['task_branch']);
+        $incoming = $received['managed'][0];
+        $this->putJson('/api/delivery/tasks/'.$incoming['id'].'/progress', ['version' => $incoming['version'], 'reported_progress' => 10, 'progress_note' => 'Not kept yet'])->assertConflict();
+        $this->postJson('/api/delivery/tasks/'.$incoming['id'].'/submit', ['version' => $incoming['version'], 'evidence' => 'Not kept yet'])->assertConflict();
         $this->assertSame('handoff:'.$first, $received['managed'][0]['linked_kpa_key']);
         $second = $this->forward($this->next, $this->third, 'handoff', $first);
         $third = $this->actingAs($this->third)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'delegated_kpis')->assertJsonCount(2, 'managed')->assertJsonCount(0, 'tasks')->json();
@@ -155,20 +158,28 @@ class KpiHandoffTest extends TestCase
             $assignment = DB::table('work_assignments')->where('activity_code', $code)->first();
             $title = $code === 'INSTALL' ? 'Install equipment' : 'Document delivery';
             $this->actingAs($this->manager)->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version,
-                'tasks' => [['title' => $title, 'assignee_id' => $owner->id, 'weight' => 1]]])->assertOk();
+                'tasks' => [['work_kind' => 'activity', 'title' => $title, 'assignee_id' => $owner->id, 'weight' => 1]]])->assertOk();
         }
         $received = $this->actingAs($this->next)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'managed')->assertJsonCount(0, 'tasks')->assertJsonCount(0, 'delegated_kpis')->json('managed.0');
         $this->assertSame('IT delivery', $received['kpa_title']);
         $this->assertSame('Network improvement', $received['kpi_title']);
         $this->assertNull($received['linked_kpa_key']);
+        $this->putJson('/api/delivery/tasks/'.$received['id'].'/progress', ['version' => $received['version'], 'reported_progress' => 10, 'progress_note' => 'Unclaimed activity'])->assertConflict();
+        $this->postJson('/api/delivery/tasks/'.$received['id'].'/submit', ['version' => $received['version'], 'evidence' => 'Unclaimed activity'])->assertConflict();
+        $this->assertDatabaseMissing('task_submissions', ['task_id' => $received['id']]);
         $this->putJson('/api/delivery/tasks/'.$received['id'].'/tasks', ['version' => $received['version'],
-            'tasks' => [['title' => $received['activity'], 'assignee_id' => $this->third->id, 'weight' => 1]]])->assertOk();
+            'tasks' => [['work_kind' => 'activity', 'title' => $received['activity'], 'assignee_id' => $this->third->id, 'weight' => 1]]])->assertOk();
         $this->actingAs($this->third)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'managed')
             ->assertJsonCount(0, 'tasks')->assertJsonPath('managed.0.activity', 'Document delivery')->assertJsonPath('managed.0.kpa_title', 'IT delivery');
         $scope = $this->getJson('/api/delivery/workspace')->json('managed.0');
+        $this->postJson('/api/delivery/tasks/'.$scope['id'].'/submit', ['version' => $scope['version'], 'evidence' => 'Unclaimed nested activity'])->assertConflict();
         $this->putJson('/api/delivery/tasks/'.$scope['id'].'/tasks', ['version' => $scope['version'],
             'tasks' => [['title' => $scope['activity'], 'assignee_id' => $this->third->id, 'weight' => 1]]])->assertOk();
         $this->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'tasks')->assertJsonPath('tasks.0.assignee_id', $this->third->id);
+        $personal = $this->getJson('/api/delivery/workspace')->json('tasks.0');
+        $this->putJson('/api/delivery/tasks/'.$personal['id'].'/progress', ['version' => $personal['version'], 'reported_progress' => 25, 'progress_note' => 'Explicitly kept work'])->assertOk();
+        $version = DB::table('delivery_tasks')->where('id', $personal['id'])->value('version');
+        $this->postJson('/api/delivery/tasks/'.$personal['id'].'/submit', ['version' => $version, 'evidence' => 'Kept work completed'])->assertOk();
         $this->assertDatabaseHas('delivery_tasks', ['title' => 'Install equipment', 'assignee_id' => $this->manager->id, 'is_active' => true]);
     }
 
@@ -179,6 +190,55 @@ class KpiHandoffTest extends TestCase
             'version' => $assignment->version, 'assignee_id' => $this->manager->id])->assertOk();
         $this->actingAs($this->manager)->postJson('/api/delivery/kpi-handoffs', ['source_kind' => 'root', 'source_id' => $this->delegation, 'version' => 1, 'assignee_id' => $this->next->id])->assertConflict();
         $this->assertDatabaseCount('kpi_handoffs', 0);
+    }
+
+    public function test_activity_kind_survives_title_edits_and_default_tasks_are_not_activities(): void
+    {
+        $assignment = DB::table('work_assignments')->where('activity_code', 'DOCUMENT')->first();
+        $body = ['tasks' => [['work_kind' => 'activity', 'title' => 'Different display title', 'assignee_id' => $this->next->id, 'weight' => 1]]];
+        $this->actingAs($this->manager)->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version, ...$body])->assertOk();
+        $task = DB::table('delivery_tasks')->where('assignment_id', $assignment->id)->first();
+        $assignment = DB::table('work_assignments')->find($assignment->id);
+        $this->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version, 'tasks' => [['id' => $task->id, 'title' => 'Renamed again', 'assignee_id' => $this->next->id, 'weight' => 1]]])->assertOk();
+        $this->actingAs($this->next)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'managed')->assertJsonCount(0, 'tasks');
+        $this->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => $task->version + 1, 'evidence' => 'Still not claimed'])->assertConflict();
+        $other = DB::table('work_assignments')->where('activity_code', 'INSTALL')->first();
+        $this->actingAs($this->manager)->putJson('/api/delivery/assignments/'.$other->id.'/tasks', ['version' => $other->version,
+            'tasks' => [['title' => 'Install equipment', 'assignee_id' => $this->next->id, 'weight' => 1]]])->assertOk();
+        $this->actingAs($this->next)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'managed')->assertJsonCount(1, 'tasks');
+    }
+
+    public function test_unstarted_handoff_can_be_edited_cancelled_and_reassigned_with_audit(): void
+    {
+        $other = $this->report($this->manager, 'manager');
+        $id = $this->forward($this->manager, $this->next, 'root', $this->delegation);
+        $body = ['mode' => 'edit', 'version' => 1, 'assignee_id' => $other->id];
+        $this->actingAs($this->next)->postJson('/api/delivery/kpi-handoffs/'.$id, $body)->assertForbidden();
+        $this->actingAs($this->manager)->postJson('/api/delivery/kpi-handoffs/'.$id, [...$body, 'version' => 99])->assertConflict();
+        $this->postJson('/api/delivery/kpi-handoffs/'.$id, [...$body, 'assignee_id' => $this->third->id])->assertUnprocessable();
+        $this->postJson('/api/delivery/kpi-handoffs/'.$id, $body)->assertOk();
+        $this->actingAs($this->next)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(0, 'delegated_kpis');
+        $this->actingAs($other)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'delegated_kpis');
+        $this->actingAs($this->manager)->postJson('/api/delivery/kpi-handoffs/'.$id, ['mode' => 'cancel', 'version' => 2])->assertOk();
+        $this->assertDatabaseHas('admin_activity', ['action' => 'kpi.handoff.edit']);
+        $this->assertDatabaseHas('admin_activity', ['action' => 'kpi.handoff.cancel']);
+        $this->assertSame(2, DB::table('delivery_tasks')->where('assignee_id', $other->id)->where('is_active', false)->count());
+        $new = $this->forward($this->manager, $this->next, 'root', $this->delegation);
+        $this->forward($this->next, $this->third, 'handoff', $new);
+        $this->actingAs($this->manager)->postJson('/api/delivery/kpi-handoffs/'.$new, ['mode' => 'cancel', 'version' => 1])->assertConflict();
+    }
+
+    public function test_previously_started_manager_work_can_still_be_completed(): void
+    {
+        $assignment = DB::table('work_assignments')->where('activity_code', 'DOCUMENT')->first();
+        $this->actingAs($this->manager)->putJson('/api/delivery/assignments/'.$assignment->id.'/tasks', ['version' => $assignment->version,
+            'tasks' => [['work_kind' => 'activity', 'title' => 'Document delivery', 'assignee_id' => $this->next->id, 'weight' => 1]]])->assertOk();
+        $task = DB::table('delivery_tasks')->where('assignment_id', $assignment->id)->first();
+        DB::table('delivery_tasks')->where('id', $task->id)->update(['reported_progress' => 10, 'status' => 'in_progress']);
+        $this->actingAs($this->next)->getJson('/api/delivery/workspace')->assertOk()->assertJsonCount(1, 'tasks');
+        $this->putJson('/api/delivery/tasks/'.$task->id.'/progress', ['version' => $task->version, 'reported_progress' => 20, 'progress_note' => 'Continue existing work'])->assertOk();
+        $version = DB::table('delivery_tasks')->where('id', $task->id)->value('version');
+        $this->postJson('/api/delivery/tasks/'.$task->id.'/submit', ['version' => $version, 'evidence' => 'Historical started work completed'])->assertOk();
     }
 
     public function test_forwarded_activity_ownership_cannot_be_changed_through_generic_task_endpoint(): void

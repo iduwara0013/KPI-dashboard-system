@@ -945,6 +945,22 @@ test('full KPI moves through reporting managers as linked KPAs and approved work
     await expect(card.getByRole('button', { name: 'Assign full KPI', exact: true })).toBeDisabled();
   }
   await forward(manager, nextRecord);
+  const alternate = await create('CHAIN-ALT', 'Alternate reporting manager', 'manager', top.id);
+  await manager.page.reload();
+  await manager.page.getByLabel('Delivery year').selectOption(String(year));
+  const outgoing = manager.page.locator('.mixed-kpi-card').filter({ has: manager.page.getByRole('heading', { name: 'Network handoff KPI', exact: true }) });
+  await outgoing.getByRole('button', { name: 'Edit / cancel assignment', exact: true }).click();
+  const editHandoff = manager.page.getByRole('dialog', { name: 'Edit KPI assignment', exact: true });
+  await expect(editHandoff.getByLabel('KPI assignment deadline')).toHaveValue(`${year}-12-01`);
+  await editHandoff.getByLabel('Assign full KPI to').selectOption(String(alternate.id));
+  await editHandoff.getByRole('button', { name: 'Save KPI assignment', exact: true }).click();
+  await expect(editHandoff).toHaveCount(0);
+  await expect(outgoing).toContainText(alternate.name);
+  await outgoing.getByRole('button', { name: 'Edit / cancel assignment', exact: true }).click();
+  await editHandoff.getByRole('button', { name: 'Cancel KPI assignment', exact: true }).click();
+  await expect(editHandoff).toHaveCount(0);
+  await expect(outgoing.getByRole('button', { name: 'Assign full KPI', exact: true })).toBeEnabled();
+  await forward(manager, nextRecord);
   await expect(manager.page.locator('.mixed-kpi-card')).toHaveCount(2);
   const nextData = await workspace(next.context);
   expect(nextData.managed).toHaveLength(2);
@@ -1047,6 +1063,9 @@ test('full KPI moves through reporting managers as linked KPAs and approved work
   await manager.page.getByLabel('Team work owner').selectOption(String(nextRecord.id));
   await expect(manager.page.locator('.team-person-work[open]')).toHaveCount(1);
   await manager.page.screenshot({ path: 'test-results/team-work-by-person.png', fullPage: true });
+  await manager.page.getByLabel('Search delivery work').fill('no-matching-task');
+  await expect(manager.page.getByLabel('Team work owner')).toHaveValue(String(nextRecord.id));
+  await expect(manager.page.getByRole('heading', { name: 'No matching work', exact: true })).toBeVisible();
   await manager.page.getByLabel('Search delivery work').fill('Management report');
   await expect(manager.page.locator('.team-work-item')).toHaveCount(1);
   await manager.page.setViewportSize({ width: 390, height: 844 });

@@ -4,6 +4,8 @@ use App\Models\User;
 
 return [
 
+    'login_ip_per_minute' => (int) env('LOGIN_IP_PER_MINUTE', 300),
+
     /*
     |--------------------------------------------------------------------------
     | Authentication Defaults

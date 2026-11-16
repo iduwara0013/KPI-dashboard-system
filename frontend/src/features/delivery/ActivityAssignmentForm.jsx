@@ -10,7 +10,7 @@ export default function ActivityAssignmentForm({ parent, data, session, onClose,
   async function submit(event) {
     event.preventDefault(); setBusy(true); setError(null);
     try {
-      await request(`/delivery/${parent.task_branch ? 'tasks' : 'assignments'}/${parent.id}/tasks`, { method: 'PUT', body: { version: parent.version, tasks: [{ title: parent.activity, assignee_id: Number(owner), weight: 1, due_date: parent.due_date || null, instructions: parent.instructions || null }] } });
+      await request(`/delivery/${parent.task_branch ? 'tasks' : 'assignments'}/${parent.id}/tasks`, { method: 'PUT', body: { version: parent.version, tasks: [{ work_kind: 'activity', title: parent.activity, assignee_id: Number(owner), weight: 1, due_date: parent.due_date || null, instructions: parent.instructions || null }] } });
       await onSaved('Activity assigned. Its source KPA and KPI remain linked.');
     } catch (err) { setError(err); } finally { setBusy(false); }
   }

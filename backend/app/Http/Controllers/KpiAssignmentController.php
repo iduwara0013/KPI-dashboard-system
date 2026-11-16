@@ -33,27 +33,38 @@ class KpiAssignmentController extends Controller
         return $result;
     }
 
-    public function rowsForPlan(object $plan): array
+    public function rowsForPlan(object $plan, ?array $codes = null): array
+    {
+        return WorkReadCache::remember('plan-rows:'.$plan->id.':'.$plan->published_revision.':'.json_encode($codes), fn () => $this->planRows($plan, $codes));
+    }
+
+    private function planRows(object $plan, ?array $codes): array
     {
         $assignments = DB::table('work_assignments')->where('plan_id', $plan->id)->get()->keyBy('activity_code');
 
         return array_map(function (array $row) use ($plan, $assignments): array {
             $assignment = $assignments->get($row['activity_code']);
-            if ($assignment && ! app(DeliveryController::class)->context($assignment)['valid']) {
+            $valid = $assignment && app(DeliveryController::class)->context($assignment)['valid'];
+            if ($assignment && ! $valid) {
                 $assignment->confirmed_progress = 0;
             }
             $eligible = ! $assignment || app(HofWorkController::class)->recipientRole((int) $plan->owner_id, (int) $assignment->assignee_id, $row['department_id']) === $assignment->recipient_role;
 
-            return [...$row, 'timeliness' => $assignment && app(DeliveryController::class)->context($assignment)['valid'] ? app(TimelinessController::class)->forAssignment($assignment)['summary'] : null, 'assignment' => $assignment, 'source_changed' => $assignment && $assignment->source_signature !== $row['source_signature'], 'assignee_eligible' => $eligible];
-        }, app(HofWorkController::class)->activities($plan));
+            return [...$row, 'timeliness' => $valid ? app(TimelinessController::class)->forAssignment($assignment)['summary'] : null, 'assignment' => $assignment, 'source_changed' => $assignment && $assignment->source_signature !== $row['source_signature'], 'assignee_eligible' => $eligible];
+        }, array_values(array_filter(app(HofWorkController::class)->activities($plan), fn ($row) => $codes === null || in_array($row['kpi_code'], $codes, true))));
     }
 
     public function forRecipient(int $user): array
     {
+        return WorkReadCache::remember('recipient:'.$user, fn () => $this->recipientRows($user));
+    }
+
+    private function recipientRows(int $user): array
+    {
         $delegations = DB::table('kpi_delegations')->where('assignee_id', $user)->get();
         $result = [];
         foreach (DB::table('performance_plans')->whereIn('id', $delegations->pluck('plan_id')->unique())->get() as $plan) {
-            foreach ($this->summaries($this->rowsForPlan($plan), $delegations) as $summary) {
+            foreach ($this->summaries($this->rowsForPlan($plan, $delegations->where('plan_id', $plan->id)->pluck('kpi_code')->all()), $delegations) as $summary) {
                 if ($summary['delegation']) {
                     $result[] = app(KpiHandoffController::class)->decorate($summary);
                 }

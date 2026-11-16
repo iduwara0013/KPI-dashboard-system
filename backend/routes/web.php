@@ -45,7 +45,7 @@ Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecuti
         Route::post('/submit', [MonthlyKpiResultController::class, 'submit'])->middleware('throttle:30,1');
         Route::post('/review', [MonthlyKpiResultController::class, 'review'])->middleware('throttle:30,1');
     });
-    Route::post('/login', [SessionController::class, 'login'])->middleware('throttle:5,1');
+    Route::post('/login', [SessionController::class, 'login'])->middleware('throttle:login-ip');
     Route::post('/logout', [SessionController::class, 'logout'])->middleware('auth');
     Route::post('/password/change', [SessionController::class, 'changePassword'])->middleware(['auth', 'throttle:5,1']);
     Route::middleware('auth')->prefix('work-changes')->group(function () {
@@ -74,6 +74,7 @@ Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecuti
     Route::middleware(['auth', RequireDeliveryAccess::class])->prefix('delivery')->group(function () {
         Route::get('/workspace', [DeliveryController::class, 'workspace']);
         Route::post('/kpi-handoffs', [KpiHandoffController::class, 'assign'])->middleware('throttle:30,1');
+        Route::post('/kpi-handoffs/{handoff}', [KpiHandoffController::class, 'change'])->whereNumber('handoff')->middleware('throttle:30,1');
         Route::post('/personal-plan/start', [DeliveryController::class, 'startPersonalWork'])->middleware('throttle:30,1');
         Route::put('/assignments/{assignment}/tasks', [DeliveryController::class, 'breakdown'])->whereNumber('assignment')->middleware('throttle:30,1');
         Route::put('/tasks/{task}/deadline', [DeliveryController::class, 'extendDeadline'])->whereNumber('task')->middleware('throttle:30,1');
@@ -92,6 +93,7 @@ Route::prefix('api')->middleware([EnsureWorkspaceIdentity::class, EnforceExecuti
         Route::get('/work', [PlanWorkController::class, 'workspace']);
         Route::post('/work/assignments', [HofWorkController::class, 'assign'])->middleware('throttle:30,1');
         Route::post('/work/kpi-assignments', [KpiAssignmentController::class, 'assign'])->middleware('throttle:30,1');
+        Route::post('/work/kpi-handoffs/{handoff}', [KpiHandoffController::class, 'change'])->whereNumber('handoff')->middleware('throttle:30,1');
         Route::put('/work/assignments/{assignment}/tasks', [DeliveryController::class, 'breakdown'])->whereNumber('assignment')->middleware('throttle:30,1');
         Route::put('/work/tasks/{task}/tasks', [DeliveryController::class, 'breakdownTask'])->whereNumber('task')->middleware('throttle:30,1');
         Route::get('/workspace', [PerformancePlanController::class, 'workspace']);

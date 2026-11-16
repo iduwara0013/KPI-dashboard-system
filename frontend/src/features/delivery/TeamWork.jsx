@@ -28,7 +28,7 @@ function PersonWork({ group, person, department, initiallyOpen, onHistory }) {
   </details>;
 }
 
-export default function TeamWork({ tasks, people, person, department, query, onHistory }) {
+export default function TeamWork({ tasks, allTasks = tasks, people, person, department, query, onHistory }) {
   const [owner, setOwner] = useState('all');
   const groups = new Map();
   for (const task of tasks) {
@@ -36,10 +36,12 @@ export default function TeamWork({ tasks, people, person, department, query, onH
     if (!groups.has(id)) groups.set(id, { id, record: people.find(row => same(row.id, id)), tasks: [] });
     groups.get(id).tasks.push(task);
   }
-  const selected = groups.has(owner) ? owner : 'all';
+  const owners = [...new Set(allTasks.map(task => String(task.assignee_id)))].sort((a, b) => person(a).localeCompare(person(b)));
+  const selected = owners.includes(owner) ? owner : 'all';
   const sorted = [...groups.values()].sort((a, b) => person(a.id).localeCompare(person(b.id)));
+  const visible = sorted.filter(group => selected === 'all' || group.id === selected);
   return <section className="team-work">
-    <div className="team-work-heading"><h2>Work by person <span className="count-label">{tasks.length}</span></h2><label>Owner<select aria-label="Team work owner" value={selected} onChange={event => setOwner(event.target.value)}><option value="all">All owners</option>{sorted.map(group => <option key={group.id} value={group.id}>{person(group.id)}</option>)}</select></label></div>
-    {!tasks.length ? <section className="panel"><Empty icon={Users} title="No team tasks in this scope" text="Assign work or change your search and year filter." /></section> : sorted.filter(group => selected === 'all' || group.id === selected).map(group => <PersonWork key={`${selected}:${Boolean(query)}:${group.id}`} group={group} person={person} department={department} initiallyOpen={selected !== 'all' || Boolean(query)} onHistory={onHistory} />)}
+    <div className="team-work-heading"><h2>Work by person <span className="count-label">{visible.reduce((sum, group) => sum + group.tasks.length, 0)}</span></h2><label>Owner<select aria-label="Team work owner" value={selected} onChange={event => setOwner(event.target.value)}><option value="all">All owners</option>{owners.map(id => <option key={id} value={id}>{person(id)}</option>)}</select></label></div>
+    {!visible.length ? <section className="panel"><Empty icon={Users} title="No matching work" text="Change the search or year, or select another owner." /></section> : visible.map(group => <PersonWork key={`${selected}:${Boolean(query)}:${group.id}`} group={group} person={person} department={department} initiallyOpen={selected !== 'all' || Boolean(query)} onHistory={onHistory} />)}
   </section>;
 }

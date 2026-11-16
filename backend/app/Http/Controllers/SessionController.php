@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Http\Middleware\RequireDeliveryAccess;
 use App\Http\Middleware\RequirePlanningAccess;
 use App\Models\User;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -33,12 +35,19 @@ class SessionController extends Controller
     {
         $data = $request->validate(['email' => 'required|string|max:180', 'password' => 'required|string']);
         $identifier = trim($data['email']);
+        $limitKey = 'login-failures:'.hash('sha256', strtolower($identifier).'|'.$request->ip());
+        if (RateLimiter::tooManyAttempts($limitKey, 5)) {
+            $retry = RateLimiter::availableIn($limitKey);
+            throw new HttpResponseException(response()->json(['message' => 'Too many failed sign-in attempts. Try again shortly.'], 429)->header('Retry-After', (string) $retry));
+        }
         $isEmail = str_contains($identifier, '@');
         $credentials = [$isEmail ? 'email' : 'employee_number' => $isEmail ? strtolower($identifier) : strtoupper($identifier), 'password' => $data['password'], 'is_active' => true];
         if (($isEmail && (! filter_var($identifier, FILTER_VALIDATE_EMAIL) || str_ends_with(strtolower($identifier), '.cpstl.invalid'))) || ! Auth::attempt($credentials)) {
+            RateLimiter::hit($limitKey, 60);
             throw ValidationException::withMessages(['email' => 'The email / EPF number or password is incorrect, or the account is inactive.']);
         }
 
+        RateLimiter::clear($limitKey);
         $request->session()->regenerate();
         $request->session()->put('account_fingerprint', $request->user()->sessionFingerprint());
 

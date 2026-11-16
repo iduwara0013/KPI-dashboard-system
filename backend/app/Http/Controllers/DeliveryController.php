@@ -13,12 +13,39 @@ use Illuminate\Validation\ValidationException;
 
 class DeliveryController extends Controller
 {
+    private function isIncomingActivity(object $task, object $assignment): bool
+    {
+        if ((int) $task->manager_id === (int) $task->assignee_id || ! $this->membership((int) $task->assignee_id, (int) $assignment->department_id, 'manager')) {
+            return false;
+        }
+
+        return ($task->work_kind ?? 'task') === 'activity';
+    }
+
+    private function requirePersonalTask(object $task, object $assignment): void
+    {
+        if ((int) $task->manager_id === (int) $task->assignee_id || ! $this->membership((int) $task->assignee_id, (int) $assignment->department_id, 'manager')) {
+            return;
+        }
+        if ((float) $task->reported_progress > 0 || DB::table('task_submissions')->where('task_id', $task->id)->exists()) {
+            return;
+        }
+        abort_if(DB::table('kpi_handoff_activities')->where('task_id', $task->id)->exists()
+            || $this->isIncomingActivity($task, $assignment), 409,
+            'Open Assigned activities and choose Keep with me or allocate the activity before updating or submitting work.');
+    }
+
     public function canDivide(int $user, int $department): bool
     {
         return $this->membership($user, $department, 'manager') || $this->membership($user, $department, 'hof');
     }
 
     private function membership(int $user, int $department, string $role): bool
+    {
+        return WorkReadCache::remember('membership:'.$user.':'.$department.':'.$role, fn () => $this->membershipResult($user, $department, $role));
+    }
+
+    private function membershipResult(int $user, int $department, string $role): bool
     {
         return DB::table('department_memberships as m')->join('users as u', 'u.id', '=', 'm.user_id')
             ->join('departments as d', 'd.id', '=', 'm.department_id')
@@ -27,6 +54,11 @@ class DeliveryController extends Controller
     }
 
     private function reports(int $user, int $manager, int $department): bool
+    {
+        return WorkReadCache::remember('reports:'.$user.':'.$manager.':'.$department, fn () => $this->reportsResult($user, $manager, $department));
+    }
+
+    private function reportsResult(int $user, int $manager, int $department): bool
     {
         return DB::table('reporting_relationships')->where('user_id', $user)->where('manager_id', $manager)->where('department_id', $department)->exists();
     }
@@ -38,6 +70,11 @@ class DeliveryController extends Controller
 
     private function activeMember(int $user, int $department): bool
     {
+        return WorkReadCache::remember('member:'.$user.':'.$department, fn () => $this->activeMemberResult($user, $department));
+    }
+
+    private function activeMemberResult(int $user, int $department): bool
+    {
         return DB::table('department_memberships as m')->join('users as u', 'u.id', '=', 'm.user_id')
             ->join('departments as d', 'd.id', '=', 'm.department_id')
             ->where('m.user_id', $user)->where('m.department_id', $department)->whereIn('m.responsibility', ['hof', 'manager', 'employee'])
@@ -45,6 +82,11 @@ class DeliveryController extends Controller
     }
 
     public function taskEligible(object $task, object $assignment): bool
+    {
+        return WorkReadCache::remember('eligible:'.$task->id.':'.$task->assignee_id.':'.$task->version.':'.$assignment->delivery_generation, fn () => $this->eligibleResult($task, $assignment));
+    }
+
+    private function eligibleResult(object $task, object $assignment): bool
     {
         if (! $task->is_active || (int) $task->generation !== (int) $assignment->delivery_generation) {
             return false;
@@ -76,6 +118,11 @@ class DeliveryController extends Controller
     }
 
     public function context(object $assignment, ?object $plan = null): array
+    {
+        return WorkReadCache::remember('context:'.$assignment->id.':'.$assignment->version.':'.($plan->published_revision ?? 'current'), fn () => $this->contextResult($assignment, $plan));
+    }
+
+    private function contextResult(object $assignment, ?object $plan = null): array
     {
         $plan ??= DB::table('performance_plans')->find($assignment->plan_id);
         $activity = $plan ? collect(app(HofWorkController::class)->activities($plan))->firstWhere('activity_code', $assignment->activity_code) : null;
@@ -199,12 +246,7 @@ class DeliveryController extends Controller
             }
             foreach ($serialized as $task) {
                 if ((int) $task['assignee_id'] === $user && $task['assignee_eligible']) {
-                    $wholeActivity = (int) $task['manager_id'] !== $user && $this->membership($user, (int) $assignment->department_id, 'manager');
-                    $ancestor = $task;
-                    while ($wholeActivity && $ancestor) {
-                        $wholeActivity = abs((float) $ancestor['weight'] - 1) < 0.00005 && $ancestor['title'] === $parent['activity'];
-                        $ancestor = $ancestor['parent_task_id'] ? $serialized->firstWhere('id', $ancestor['parent_task_id']) : null;
-                    }
+                    $wholeActivity = $this->isIncomingActivity((object) $task, $assignment);
                     if ($handoffTasks->has($task['id']) || $wholeActivity) {
                         $link = $handoffTasks->get($task['id']) ?? ['link_key' => null, 'valid' => true];
                         $children = $serialized->where('parent_task_id', $task['id'])->values();
@@ -328,6 +370,7 @@ class DeliveryController extends Controller
             'version' => ['required', 'integer', 'min:1'], 'tasks' => ['required', 'array', 'min:1', 'max:50'],
             'tasks.*.id' => ['nullable', 'integer', 'min:1'], 'tasks.*.title' => ['required', 'string', 'max:500'],
             'tasks.*.assignee_id' => ['required', 'integer'], 'tasks.*.weight' => ['required', 'numeric', 'between:0.0001,1'],
+            'tasks.*.work_kind' => ['sometimes', Rule::in(['task', 'activity'])],
             'tasks.*.due_date' => ['nullable', 'date_format:Y-m-d'], 'tasks.*.instructions' => ['nullable', 'string', 'max:2000'],
         ]);
         $weights = array_map(fn ($row) => round((float) $row['weight'], 4), $data['tasks']);
@@ -362,8 +405,10 @@ class DeliveryController extends Controller
                     abort_if($assignee !== $actor && (int) $ancestor->assignee_id === $assignee, 422, 'Work cannot be delegated back to an earlier owner.');
                     $ancestor = $ancestor->parent_task_id ? DB::table('delivery_tasks')->find($ancestor->parent_task_id) : null;
                 }
+                $kind = $id ? $existing[$id]->work_kind : ($task['work_kind'] ?? 'task');
+                abort_if($kind === 'activity' && (count($data['tasks']) !== 1 || abs($weights[$index] - 1) > .00005), 422, 'A complete activity must be assigned at 100%.');
                 $attributes = [
-                    'title' => $task['title'], 'assignee_id' => (int) $task['assignee_id'],
+                    'work_kind' => $kind, 'title' => $task['title'], 'assignee_id' => (int) $task['assignee_id'],
                     'reviewer_id' => $assignee === $actor ? ($branch?->reviewer_id ?? ((int) $parent->owner_id === $actor && ! $this->membership($actor, (int) $parent->department_id, 'hof') ? (DB::table('delivery_tasks')->where('assignment_id', $parent->id)->where('generation', $parent->delivery_generation)->whereNull('parent_task_id')->where('assignee_id', $actor)->orderBy('id')->value('reviewer_id') ?? $parent->owner_id) : $parent->owner_id)) : $actor,
                     'weight' => $weights[$index], 'due_date' => $task['due_date'] ?? null, 'instructions' => $task['instructions'] ?? null,
                     'updated_at' => now(),
@@ -407,6 +452,7 @@ class DeliveryController extends Controller
             [$record, $assignment] = $this->lockTask($task);
             abort_if(DB::table('delivery_tasks')->where('parent_task_id', $task)->where('is_active', true)->exists(), 409, 'Progress for divided work is calculated from its child tasks.');
             abort_unless((int) $record->assignee_id === $request->user()->id, 403, 'You can update only your own tasks.');
+            $this->requirePersonalTask($record, $assignment);
             abort_unless((int) $record->version === (int) $data['version'], 409, 'This task changed. Refresh before saving.');
             abort_if(in_array($record->status, ['submitted', 'approved'], true), 409, 'Submitted or approved work cannot be edited.');
             DB::table('delivery_tasks')->where('id', $task)->update(['reported_progress' => round((float) $data['reported_progress'], 2), 'progress_note' => $data['progress_note'], 'status' => $record->status === 'needs_changes' ? 'needs_changes' : 'in_progress', 'version' => $record->version + 1, 'updated_at' => now()]);
@@ -424,6 +470,7 @@ class DeliveryController extends Controller
             [$record, $assignment] = $this->lockTask($task);
             abort_if(DB::table('delivery_tasks')->where('parent_task_id', $task)->where('is_active', true)->exists(), 409, 'Complete the child tasks to finish this work.');
             abort_unless((int) $record->assignee_id === $request->user()->id, 403, 'You can submit only your own tasks.');
+            $this->requirePersonalTask($record, $assignment);
             abort_unless((int) $record->version === (int) $data['version'], 409, 'This task changed. Refresh before submitting.');
             $selfConfirm = $this->selfConfirmable($record, $assignment);
             abort_if($record->status === 'approved' || ($record->status === 'submitted' && ! $selfConfirm), 409, 'This task is already submitted or approved.');

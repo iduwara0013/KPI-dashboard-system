@@ -59,6 +59,11 @@ class PersonalAllocationController extends Controller
 
     public function sources(int $owner, int $year): array
     {
+        return WorkReadCache::remember('sources:'.$owner.':'.$year, fn () => $this->sourceRows($owner, $year));
+    }
+
+    private function sourceRows(int $owner, int $year): array
+    {
         $sources = [];
         $kpis = collect(app(KpiAssignmentController::class)->forRecipient($owner))->where('year', $year);
         $covered = [];

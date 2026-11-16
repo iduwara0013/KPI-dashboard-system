@@ -31,6 +31,48 @@ class SecurityBoundaryTest extends TestCase
             ->assertStatus(429)->assertHeader('Retry-After');
     }
 
+    public function test_failed_logins_do_not_block_another_account_on_the_same_office_ip(): void
+    {
+        $user = User::factory()->create(['system_role' => 'super_admin', 'is_active' => true, 'password' => 'Known-password-123']);
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->postJson('/api/login', ['email' => 'missing@example.test', 'password' => 'wrong'])->assertUnprocessable();
+        }
+        $this->postJson('/api/login', ['email' => $user->email, 'password' => 'Known-password-123'])->assertOk();
+    }
+
+    public function test_successful_logins_reset_failures_and_are_not_limited_to_five_per_office_ip(): void
+    {
+        $user = User::factory()->create(['system_role' => 'super_admin', 'is_active' => true, 'password' => 'Known-password-123']);
+        for ($round = 0; $round < 7; $round++) {
+            for ($attempt = 0; $attempt < 4; $attempt++) {
+                $this->postJson('/api/login', ['email' => strtoupper($user->email), 'password' => 'wrong'])->assertUnprocessable();
+            }
+            $this->postJson('/api/login', ['email' => $user->email, 'password' => 'Known-password-123'])->assertOk();
+            $this->postJson('/api/logout')->assertOk();
+        }
+    }
+
+    public function test_login_failure_limit_expires_and_is_isolated_by_ip(): void
+    {
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->postJson('/api/login', ['email' => 'missing@example.test', 'password' => 'wrong'])->assertUnprocessable();
+        }
+        $this->postJson('/api/login', ['email' => ' MISSING@example.test ', 'password' => 'wrong'])->assertStatus(429);
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.2'])->postJson('/api/login', ['email' => 'missing@example.test', 'password' => 'wrong'])->assertUnprocessable();
+        $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1']);
+        $this->travel(61)->seconds();
+        $this->postJson('/api/login', ['email' => 'missing@example.test', 'password' => 'wrong'])->assertUnprocessable();
+    }
+
+    public function test_ip_wide_login_abuse_limit_is_still_enforced(): void
+    {
+        config(['auth.login_ip_per_minute' => 3]);
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $this->postJson('/api/login', ['email' => 'missing-'.$attempt, 'password' => 'wrong'])->assertUnprocessable();
+        }
+        $this->postJson('/api/login', ['email' => 'another-identifier', 'password' => 'wrong'])->assertStatus(429)->assertHeader('Retry-After');
+    }
+
     public function test_inactive_accounts_cannot_login_or_use_existing_privileged_workspaces(): void
     {
         $user = User::factory()->create(['system_role' => 'super_admin', 'is_active' => false]);
