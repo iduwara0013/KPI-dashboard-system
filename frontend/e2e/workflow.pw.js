@@ -824,8 +824,12 @@ test('CIO workbook example delegates a linked KPA and department editor edits an
   await expect(manager.page.locator('.assigned-structure-heading')).toContainText('2 linked KPAs');
   await expect(manager.page.locator('.assigned-area[open]')).toHaveCount(0);
   const digitalArea = manager.page.locator('.assigned-area').filter({ has: manager.page.getByRole('heading', { name: 'Digital Transformation', exact: true }) });
+  await expect(digitalArea.locator(':scope > summary .work-source-weight')).toContainText('75%');
+  await expect(digitalArea.locator(':scope > summary .work-source-weight')).toContainText('of my assigned work');
   await digitalArea.locator(':scope > summary').click();
   const linked = digitalArea.locator('.assigned-kpi');
+  await expect(linked.locator(':scope > summary .work-source-weight')).toContainText('100%');
+  await expect(linked.locator(':scope > summary .work-source-weight')).toContainText('within my assigned KPA');
   await expect(linked.locator(':scope > summary')).toContainText('SOURCE KPI → MY LINKED KPA');
   await linked.locator(':scope > summary').click();
   const managerActivity = linked.locator('.delivery-parent').filter({ hasText: 'initiate digital transformation projects' });
@@ -836,6 +840,7 @@ test('CIO workbook example delegates a linked KPA and department editor edits an
   await manager.page.getByLabel('Search delivery work').fill('Review user feedback');
   await expect(manager.page.locator('.assigned-area')).toHaveCount(1);
   await expect(manager.page.getByRole('heading', { name: 'Customer Satisfaction', exact: true })).toBeVisible();
+  await expect(manager.page.locator('.assigned-area > summary .work-source-weight')).toContainText('25%');
   await manager.page.getByRole('button', { name: 'Create task breakdown', exact: true }).click();
   await expect(manager.page.getByRole('dialog', { name: 'Activity task breakdown', exact: true })).toBeVisible();
   await manager.page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();

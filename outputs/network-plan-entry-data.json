@@ -1,0 +1,662 @@
+[
+  {
+    "title": "LAN and Wireless Network Operations",
+    "weight": 25,
+    "category": "Internal Processes",
+    "notes": "Maintain dependable LAN and Wi-Fi services and deliver approved network improvements across company locations.",
+    "kpis": [
+      {
+        "title": "Maintain LAN and Wi-Fi service availability",
+        "weight": 70,
+        "target": 99.5,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure availability of agreed in-scope LAN and Wi-Fi services during each month. Availability = available service minutes / scheduled service minutes x 100. Record monitoring coverage, outages and any approved exclusions.",
+        "activities": [
+          {
+            "title": "Monitor LAN switches, access points and critical network links",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Maintain dated monitoring records with device and site references and identified faults."
+          },
+          {
+            "title": "Troubleshoot and resolve LAN and Wi-Fi connectivity issues",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Record incident references, diagnosis, corrective action and successful connectivity verification."
+          },
+          {
+            "title": "Review network availability and recurring faults",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Prepare the monthly availability summary and recurring-fault action list."
+          }
+        ]
+      },
+      {
+        "title": "Complete planned LAN and Wi-Fi improvements",
+        "weight": 30,
+        "target": 100,
+        "unit": "Percent (%)",
+        "frequency": "Quarterly",
+        "direction": "Higher is better",
+        "notes": "Measure accepted improvement milestones completed / milestones due in the quarter x 100. Agree the milestone list and acceptance evidence before the quarter starts. An unapproved scope change does not change the denominator.",
+        "activities": [
+          {
+            "title": "Assess network coverage, cabling and port capacity requirements",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Record site findings, capacity requirements and the approved improvement scope."
+          },
+          {
+            "title": "Install or upgrade switches, access points and network cabling",
+            "weight": 50,
+            "due": "2027-12-10",
+            "notes": "Keep approved change records, equipment details and installation evidence."
+          },
+          {
+            "title": "Test connectivity and update network diagrams",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Attach connectivity test results and the updated approved network diagram."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "WAN and Internet Connectivity",
+    "weight": 15,
+    "category": "Internal Processes",
+    "notes": "Maintain connectivity between company sites and manage internet performance and capacity.",
+    "kpis": [
+      {
+        "title": "Maintain reliable connectivity between company locations",
+        "weight": 60,
+        "target": 99.5,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure monthly availability of agreed WAN services using scheduled service minutes as the denominator. Keep site and provider outage records. Agree planned-maintenance exclusions before measuring.",
+        "activities": [
+          {
+            "title": "Monitor WAN links and site-to-site connectivity",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Record link status, affected locations and monitoring alerts."
+          },
+          {
+            "title": "Coordinate link-fault resolution with service providers",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Maintain provider ticket numbers, escalation times and restoration confirmation."
+          },
+          {
+            "title": "Test backup links and connectivity failover",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Record the approved failover test, result and any recovery actions."
+          }
+        ]
+      },
+      {
+        "title": "Improve internet bandwidth utilisation and performance",
+        "weight": 40,
+        "target": 80,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Lower is better",
+        "notes": "Measure the monthly 95th-percentile utilisation of each in-scope internet link; report the highest value. Utilisation = used bandwidth / provisioned bandwidth x 100. The proposed upper target is 80 percent. Evaluate availability separately.",
+        "activities": [
+          {
+            "title": "Review bandwidth usage and identify network bottlenecks",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Keep bandwidth reports, measurement periods and identified congestion points."
+          },
+          {
+            "title": "Optimise traffic prioritisation and bandwidth allocation",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Document approved traffic policy changes and before-and-after measurements."
+          },
+          {
+            "title": "Review internet performance and recommend capacity changes",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Prepare a capacity review with evidence and prioritised recommendations."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Network Security and Access Control",
+    "weight": 20,
+    "category": "Internal Processes",
+    "notes": "Maintain secure network configurations, controlled remote access and timely network vulnerability remediation.",
+    "kpis": [
+      {
+        "title": "Maintain secure firewall and network configurations",
+        "weight": 60,
+        "target": 100,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure scheduled firewall, VPN and configuration reviews completed / reviews due in the month x 100. Define the device and access-review scope in advance. Completion requires recorded findings and approved actions.",
+        "activities": [
+          {
+            "title": "Review firewall rules, VPN access and network security logs",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Record review dates, rules or access reviewed, findings and required approvals."
+          },
+          {
+            "title": "Apply approved firewall and network security changes",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Retain change approvals, implementation records and verification results."
+          },
+          {
+            "title": "Back up configurations and document security changes",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Keep configuration backup references and updated configuration change records."
+          }
+        ]
+      },
+      {
+        "title": "Resolve network vulnerabilities and unauthorised access risks",
+        "weight": 40,
+        "target": 95,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure remediation actions closed within their agreed risk-based deadlines / remediation actions due in the month x 100. Closure requires verification. When no actions are due, record no applicable actions and follow the approved reporting rule; do not invent a percentage.",
+        "activities": [
+          {
+            "title": "Identify vulnerable network devices and insecure configurations",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Record authorised assessment findings, affected assets and agreed risk priorities."
+          },
+          {
+            "title": "Apply approved firmware updates and remediation actions",
+            "weight": 50,
+            "due": "2027-12-10",
+            "notes": "Maintain approvals, update references, remediation dates and rollback arrangements."
+          },
+          {
+            "title": "Verify remediation and review privileged network access",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Attach verification results and the privileged-access review record."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Data Centre Operations and Readiness",
+    "weight": 10,
+    "category": "Internal Processes",
+    "notes": "Keep data centre facilities operational and complete preventive maintenance with verifiable records.",
+    "kpis": [
+      {
+        "title": "Maintain operational readiness of data centre facilities",
+        "weight": 60,
+        "target": 100,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure scheduled readiness checks completed / checks due in the month x 100. Use an approved checklist covering rack equipment, UPS status and environmental conditions. Track unresolved risks separately.",
+        "activities": [
+          {
+            "title": "Check rack equipment, UPS status and environmental conditions",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Complete dated inspection checklists and record abnormal conditions."
+          },
+          {
+            "title": "Coordinate corrective maintenance for identified facility issues",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Keep maintenance requests, assigned owners and corrective-action evidence."
+          },
+          {
+            "title": "Maintain inspection records and escalate unresolved risks",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Update the inspection register and record escalations with responsible owners."
+          }
+        ]
+      },
+      {
+        "title": "Complete preventive maintenance of data centre equipment",
+        "weight": 40,
+        "target": 100,
+        "unit": "Percent (%)",
+        "frequency": "Quarterly",
+        "direction": "Higher is better",
+        "notes": "Measure scheduled maintenance jobs completed and verified / jobs due in the quarter x 100. Keep an approved schedule and record deferred jobs with their authorisation.",
+        "activities": [
+          {
+            "title": "Prepare and maintain the preventive maintenance schedule",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Keep the approved equipment list, maintenance dates and service responsibilities."
+          },
+          {
+            "title": "Carry out or coordinate scheduled equipment maintenance",
+            "weight": 60,
+            "due": "2027-12-10",
+            "notes": "Record completed service jobs, vendor reports and any identified defects."
+          },
+          {
+            "title": "Verify equipment operation and update maintenance records",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Attach post-maintenance checks and update the equipment maintenance history."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Server and System Administration",
+    "weight": 10,
+    "category": "Internal Processes",
+    "notes": "Maintain critical server services and carry out approved patching, account reviews and capacity management.",
+    "kpis": [
+      {
+        "title": "Maintain availability of critical servers and system services",
+        "weight": 60,
+        "target": 99.5,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure monthly availability of agreed critical server services. Availability = available service minutes / scheduled service minutes x 100. Keep the service list, outage records and agreed maintenance exclusions.",
+        "activities": [
+          {
+            "title": "Monitor server health, storage capacity and critical services",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Keep monitoring results, capacity alerts and service-health records."
+          },
+          {
+            "title": "Resolve server and operating-system incidents",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Record incidents, diagnosis, corrective actions and restoration verification."
+          },
+          {
+            "title": "Review capacity trends and plan required improvements",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Produce a capacity review with storage, processing and service-growth actions."
+          }
+        ]
+      },
+      {
+        "title": "Complete scheduled server patching and access reviews",
+        "weight": 40,
+        "target": 95,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure approved patching and access-review actions completed by their due dates / actions due in the month x 100. Define the action list and due dates in advance and verify completion.",
+        "activities": [
+          {
+            "title": "Review required patches and prepare approved change requests",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Maintain the patch assessment, affected systems and approved change requests."
+          },
+          {
+            "title": "Apply updates and verify system functionality",
+            "weight": 50,
+            "due": "2027-12-10",
+            "notes": "Record update results, service tests and any rollback or exception decisions."
+          },
+          {
+            "title": "Review administrator accounts and update system records",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Keep account review approvals and updated system administration records."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "IT Service Desk and User Support",
+    "weight": 5,
+    "category": "Customer",
+    "notes": "Provide traceable IT support and reduce recurring incidents through verified corrective action.",
+    "kpis": [
+      {
+        "title": "Resolve IT support requests within agreed service timelines",
+        "weight": 70,
+        "target": 90,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure support requests resolved within their agreed SLA / resolved requests assessed in the month x 100. Use agreed priority-based timelines and ticket timestamps. Record exclusions and reopened-ticket handling consistently.",
+        "activities": [
+          {
+            "title": "Record, categorise and prioritise user support requests",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Maintain support tickets with requester, priority, assigned owner and timestamps."
+          },
+          {
+            "title": "Diagnose and resolve assigned hardware and software issues",
+            "weight": 60,
+            "due": "2027-12-10",
+            "notes": "Record diagnosis, work completed and resolution evidence for each ticket."
+          },
+          {
+            "title": "Confirm resolution with users and close support records",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Record user confirmation or the approved closure basis and close the ticket."
+          }
+        ]
+      },
+      {
+        "title": "Reduce repeated user-support incidents",
+        "weight": 30,
+        "target": 5,
+        "unit": "count",
+        "frequency": "Monthly",
+        "direction": "Lower is better",
+        "notes": "Count repeat incidents in the month using an agreed repeat-incident definition and root-cause register. The proposed target is no more than 5 repeat incidents per month. Record zero when verified; do not omit the result.",
+        "activities": [
+          {
+            "title": "Analyse frequently reported IT support issues",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Prepare a recurring-incident analysis linked to ticket references."
+          },
+          {
+            "title": "Implement corrective actions for recurring problems",
+            "weight": 50,
+            "due": "2027-12-10",
+            "notes": "Record root causes, approved corrective actions and implementation evidence."
+          },
+          {
+            "title": "Provide user guidance and review incident recurrence",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Keep user guidance records and the follow-up recurrence assessment."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Business Application Support",
+    "weight": 5,
+    "category": "Customer",
+    "notes": "Support critical business applications and deliver approved application improvements with user acceptance.",
+    "kpis": [
+      {
+        "title": "Maintain availability and support of business applications",
+        "weight": 60,
+        "target": 99.5,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure monthly availability of the agreed critical business application services using scheduled service minutes. Keep application incident records and agreed service exclusions.",
+        "activities": [
+          {
+            "title": "Monitor critical application services and scheduled processes",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Record application checks, scheduled-job results and detected failures."
+          },
+          {
+            "title": "Investigate application incidents and coordinate resolution",
+            "weight": 50,
+            "due": "2027-12-10",
+            "notes": "Keep incident references, investigation notes and vendor or developer actions."
+          },
+          {
+            "title": "Verify service restoration and maintain support records",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Attach restoration checks and update application support records."
+          }
+        ]
+      },
+      {
+        "title": "Deliver approved application improvements",
+        "weight": 40,
+        "target": 1,
+        "unit": "count",
+        "frequency": "On completion",
+        "direction": "Higher is better",
+        "notes": "Complete 1 approved application improvement package during 2027. Define its requirements, scope and acceptance criteria before work begins. Count the package only after documented user acceptance and operational handover.",
+        "activities": [
+          {
+            "title": "Gather user requirements and confirm the improvement scope",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Retain approved requirements, scope, acceptance criteria and responsible users."
+          },
+          {
+            "title": "Develop or coordinate approved application changes",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Maintain change approvals, implementation records and technical test results."
+          },
+          {
+            "title": "Complete user testing, deployment and handover",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Attach user acceptance, deployment approval and operational handover evidence."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Backup and Disaster Recovery",
+    "weight": 5,
+    "category": "Internal Processes",
+    "notes": "Maintain reliable backups and verify that agreed systems and data can be restored when required.",
+    "kpis": [
+      {
+        "title": "Complete scheduled backups and resolve backup failures",
+        "weight": 60,
+        "target": 98,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure successful scheduled backup jobs / scheduled backup jobs due in the month x 100. Use the approved backup schedule and define how retries are counted so failed attempts are not hidden.",
+        "activities": [
+          {
+            "title": "Monitor scheduled backups and investigate failed jobs",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Keep backup-job reports, failure alerts and investigation references."
+          },
+          {
+            "title": "Resolve backup failures and verify successful completion",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Record corrective actions and successful backup verification results."
+          },
+          {
+            "title": "Review backup retention and storage capacity",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Maintain retention checks, storage-capacity reviews and required actions."
+          }
+        ]
+      },
+      {
+        "title": "Verify recovery readiness through restoration testing",
+        "weight": 40,
+        "target": 4,
+        "unit": "count",
+        "frequency": "Annually",
+        "direction": "Higher is better",
+        "notes": "Complete 4 documented restoration or recovery tests during 2027. Count a test only when the approved scope is executed, results are recorded and the recovery owner accepts the result. Track failed tests and unresolved gaps.",
+        "activities": [
+          {
+            "title": "Prepare the restoration test scope and recovery checklist",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Keep approved test scopes, systems selected and recovery checklists."
+          },
+          {
+            "title": "Perform approved restoration and recovery tests",
+            "weight": 50,
+            "due": "2027-12-10",
+            "notes": "Record test dates, recovery steps, outcomes and measured recovery times."
+          },
+          {
+            "title": "Record results, resolve gaps and update recovery procedures",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Maintain accepted test reports, corrective actions and revised procedures."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "IT Asset and Vendor Management",
+    "weight": 3,
+    "category": "Financial",
+    "notes": "Maintain accurate IT asset and licence records and manage vendor obligations and renewal dates.",
+    "kpis": [
+      {
+        "title": "Maintain accurate IT asset and licence records",
+        "weight": 50,
+        "target": 100,
+        "unit": "Percent (%)",
+        "frequency": "Quarterly",
+        "direction": "Higher is better",
+        "notes": "Measure verified and current records / asset and licence records in the agreed quarterly verification scope x 100. Record discrepancies, reconciliation actions and evidence of correction.",
+        "activities": [
+          {
+            "title": "Verify assigned IT equipment and update the asset register",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Record physical or approved remote verification and asset-register updates."
+          },
+          {
+            "title": "Review software licences, warranties and renewal dates",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Maintain licence entitlements, warranty evidence and renewal schedules."
+          },
+          {
+            "title": "Record asset transfers, replacements and disposals",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Retain approved transfer, replacement and disposal records."
+          }
+        ]
+      },
+      {
+        "title": "Complete vendor service reviews and renewals on time",
+        "weight": 50,
+        "target": 100,
+        "unit": "Percent (%)",
+        "frequency": "Monthly",
+        "direction": "Higher is better",
+        "notes": "Measure vendor review and renewal actions completed by their due dates / actions due in the month x 100. Agree the due-action list and retain service reviews and renewal approvals.",
+        "activities": [
+          {
+            "title": "Review vendor service performance and outstanding issues",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Maintain SLA review records, service issues and agreed vendor actions."
+          },
+          {
+            "title": "Coordinate required contract, warranty and service renewals",
+            "weight": 40,
+            "due": "2027-12-10",
+            "notes": "Keep renewal requests, approvals and confirmed service coverage dates."
+          },
+          {
+            "title": "Maintain vendor review records and escalate service gaps",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Update vendor review files and record unresolved-gap escalations."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "IT Team Development and Documentation",
+    "weight": 2,
+    "category": "Learning and Growth",
+    "notes": "Develop technical capability and maintain approved operating procedures and current technical documentation.",
+    "kpis": [
+      {
+        "title": "Complete planned technical training and knowledge sharing",
+        "weight": 50,
+        "target": 4,
+        "unit": "count",
+        "frequency": "Annually",
+        "direction": "Higher is better",
+        "notes": "Complete 4 approved team technical learning sessions during 2027. Count a session when attendance and learning or practical outcomes are recorded. Internal knowledge-sharing sessions may count when included in the approved plan; do not double-count the same event.",
+        "activities": [
+          {
+            "title": "Identify technical skill gaps and prepare a training plan",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Keep the skill-gap review, approved learning priorities and training plan."
+          },
+          {
+            "title": "Complete approved technical training or practical sessions",
+            "weight": 50,
+            "due": "2027-12-10",
+            "notes": "Record attendance, practical exercises or course completion evidence."
+          },
+          {
+            "title": "Conduct internal IT knowledge-sharing sessions",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Keep session materials, attendance and the agreed learning outcomes."
+          }
+        ]
+      },
+      {
+        "title": "Maintain current IT operating procedures and technical records",
+        "weight": 50,
+        "target": 100,
+        "unit": "Percent (%)",
+        "frequency": "Quarterly",
+        "direction": "Higher is better",
+        "notes": "Measure documents reviewed, updated where necessary and approved / documents due for review in the quarter x 100. Use a controlled register with document owners, versions and review dates.",
+        "activities": [
+          {
+            "title": "Identify missing or outdated IT procedures and records",
+            "weight": 20,
+            "due": "2027-12-10",
+            "notes": "Maintain the document gap list, owners and required review dates."
+          },
+          {
+            "title": "Update operating procedures, configuration records and diagrams",
+            "weight": 50,
+            "due": "2027-12-10",
+            "notes": "Record updated document versions and the changes made."
+          },
+          {
+            "title": "Review documentation and publish approved versions",
+            "weight": 30,
+            "due": "2027-12-10",
+            "notes": "Retain review approvals and publish the controlled approved versions."
+          }
+        ]
+      }
+    ]
+  }
+]

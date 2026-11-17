@@ -1,0 +1,859 @@
+{
+  "paths": {
+    "1.1": [
+      "14673",
+      "16503"
+    ],
+    "1.2": [
+      "14673",
+      "16503"
+    ],
+    "2.1": [
+      "14673",
+      "16503"
+    ],
+    "2.2": [
+      "14673",
+      "16503"
+    ],
+    "3.1": [
+      "14673",
+      "16503"
+    ],
+    "3.2": [
+      "14673",
+      "16503"
+    ],
+    "4.1": [
+      "14673",
+      "16503",
+      "11473"
+    ],
+    "4.2": [
+      "14673",
+      "16503",
+      "11473"
+    ],
+    "5.1": [
+      "14673",
+      "16502",
+      "14994"
+    ],
+    "5.2": [
+      "14673",
+      "16502",
+      "14994"
+    ],
+    "6.1": [
+      "14673",
+      "16502"
+    ],
+    "6.2": [
+      "14673",
+      "16502"
+    ],
+    "7.1": [
+      "14673",
+      "11434"
+    ],
+    "7.2": [
+      "14673",
+      "11434",
+      "14631",
+      "16917"
+    ],
+    "8.1": [
+      "14673",
+      "16502"
+    ],
+    "8.2": [
+      "14673",
+      "16502"
+    ],
+    "9.1": [
+      "14673"
+    ],
+    "9.2": [
+      "14673"
+    ],
+    "10.1": [
+      "14673"
+    ],
+    "10.2": [
+      "14673"
+    ]
+  },
+  "trees": {
+    "1.1.1": [
+      {
+        "epf": "16503",
+        "weight": 20,
+        "title": "Review network monitoring and escalation",
+        "children": []
+      },
+      {
+        "epf": "17611",
+        "weight": 80,
+        "title": "Perform network monitoring and record alerts",
+        "children": []
+      }
+    ],
+    "1.1.2": [
+      {
+        "epf": "17612",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "1.1.3": [
+      {
+        "epf": "17613",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "1.2.1": [
+      {
+        "epf": "17611",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "1.2.2": [
+      {
+        "epf": "17612",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "1.2.3": [
+      {
+        "epf": "17613",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "2.1.1": [
+      {
+        "epf": "16503",
+        "weight": 20,
+        "title": "Review network monitoring and escalation",
+        "children": []
+      },
+      {
+        "epf": "17611",
+        "weight": 80,
+        "title": "Perform network monitoring and record alerts",
+        "children": []
+      }
+    ],
+    "2.1.2": [
+      {
+        "epf": "17612",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "2.1.3": [
+      {
+        "epf": "17613",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "2.2.1": [
+      {
+        "epf": "17611",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "2.2.2": [
+      {
+        "epf": "17612",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "2.2.3": [
+      {
+        "epf": "17613",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "3.1.1": [
+      {
+        "epf": "16503",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "3.1.2": [
+      {
+        "epf": "17611",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "3.1.3": [
+      {
+        "epf": "17612",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "3.2.1": [
+      {
+        "epf": "17613",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "3.2.2": [
+      {
+        "epf": "17611",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "3.2.3": [
+      {
+        "epf": "16503",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "4.1.1": [
+      {
+        "epf": "11473",
+        "weight": 10,
+        "title": "Review facility readiness and exceptions",
+        "children": []
+      },
+      {
+        "epf": "16648",
+        "weight": 30,
+        "title": "Perform assigned facility checks",
+        "children": []
+      },
+      {
+        "epf": "16645",
+        "weight": 30,
+        "title": "Check assigned UPS and rack conditions",
+        "children": []
+      },
+      {
+        "epf": "16646",
+        "weight": 30,
+        "title": "Check assigned environmental conditions",
+        "children": []
+      }
+    ],
+    "4.1.2": [
+      {
+        "epf": "17496",
+        "weight": 50,
+        "title": "Coordinate assigned corrective maintenance",
+        "children": []
+      },
+      {
+        "epf": "17500",
+        "weight": 50,
+        "title": "Verify assigned facility corrective actions",
+        "children": []
+      }
+    ],
+    "4.1.3": [
+      {
+        "epf": "17013",
+        "weight": 60,
+        "title": "Compile inspection and escalation records",
+        "children": []
+      },
+      {
+        "epf": "17364",
+        "weight": 40,
+        "title": "Maintain controlled inspection data records",
+        "children": []
+      }
+    ],
+    "4.2.1": [
+      {
+        "epf": "11473",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "4.2.2": [
+      {
+        "epf": "11473",
+        "weight": 25,
+        "title": "Supervise maintenance and accept technical results",
+        "children": []
+      },
+      {
+        "epf": "17514",
+        "weight": 15,
+        "title": "Coordinate assigned technical maintenance",
+        "children": []
+      },
+      {
+        "epf": "17516",
+        "weight": 15,
+        "title": "Complete assigned equipment service checks",
+        "children": []
+      },
+      {
+        "epf": "17517",
+        "weight": 15,
+        "title": "Verify assigned maintenance results",
+        "children": []
+      },
+      {
+        "epf": "17208",
+        "weight": 5,
+        "title": "Support approved equipment handling under supervision",
+        "children": []
+      },
+      {
+        "epf": "17235",
+        "weight": 5,
+        "title": "Provide authorised maintenance transport support",
+        "children": []
+      },
+      {
+        "epf": "17316",
+        "weight": 5,
+        "title": "Prepare maintenance document packs",
+        "children": []
+      },
+      {
+        "epf": "17359",
+        "weight": 5,
+        "title": "Prepare authorised maintenance work areas",
+        "children": []
+      },
+      {
+        "epf": "17568",
+        "weight": 5,
+        "title": "Assist approved equipment movement under supervision",
+        "children": []
+      },
+      {
+        "epf": "17587",
+        "weight": 5,
+        "title": "Organise maintenance records for review",
+        "children": []
+      }
+    ],
+    "4.2.3": [
+      {
+        "epf": "16648",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "5.1.1": [
+      {
+        "epf": "14994",
+        "weight": 20,
+        "title": "Review server monitoring and prioritise alerts",
+        "children": []
+      },
+      {
+        "epf": "16625",
+        "weight": 80,
+        "title": "Perform authorised server monitoring checks",
+        "children": []
+      }
+    ],
+    "5.1.2": [
+      {
+        "epf": "14994",
+        "weight": 20,
+        "title": "Review incident diagnosis and restoration",
+        "children": []
+      },
+      {
+        "epf": "16682",
+        "weight": 80,
+        "title": "Perform authorised technical support actions",
+        "children": []
+      }
+    ],
+    "5.1.3": [
+      {
+        "epf": "14994",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "5.2.1": [
+      {
+        "epf": "14994",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "5.2.2": [
+      {
+        "epf": "14994",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "5.2.3": [
+      {
+        "epf": "14994",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "6.1.1": [
+      {
+        "epf": "16502",
+        "weight": 20,
+        "title": "Review ticket prioritisation and assignment",
+        "children": []
+      },
+      {
+        "epf": "11438",
+        "weight": 80,
+        "title": "Record and categorise support requests",
+        "children": []
+      }
+    ],
+    "6.1.2": [
+      {
+        "epf": "16502",
+        "weight": 20,
+        "title": "Coordinate incident resolution and escalation",
+        "children": []
+      },
+      {
+        "epf": "14994",
+        "weight": 80,
+        "title": "Deliver assigned technical support",
+        "children": [
+          {
+            "epf": "14994",
+            "weight": 20,
+            "title": "Review support diagnosis and technical results",
+            "children": []
+          },
+          {
+            "epf": "16682",
+            "weight": 80,
+            "title": "Resolve authorised hardware and software issues",
+            "children": []
+          }
+        ]
+      }
+    ],
+    "6.1.3": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "6.2.1": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "6.2.2": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "6.2.3": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "7.1.1": [
+      {
+        "epf": "11434",
+        "weight": 10,
+        "title": "Review business application monitoring results",
+        "children": []
+      },
+      {
+        "epf": "14631",
+        "weight": 90,
+        "title": "Coordinate application service monitoring",
+        "children": [
+          {
+            "epf": "14631",
+            "weight": 20,
+            "title": "Review application service risks",
+            "children": []
+          },
+          {
+            "epf": "16917",
+            "weight": 80,
+            "title": "Coordinate assigned application checks",
+            "children": [
+              {
+                "epf": "16917",
+                "weight": 20,
+                "title": "Review functional service checks",
+                "children": []
+              },
+              {
+                "epf": "17536",
+                "weight": 80,
+                "title": "Perform assigned application service checks",
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "7.1.2": [
+      {
+        "epf": "16918",
+        "weight": 100,
+        "title": null,
+        "children": [
+          {
+            "epf": "16918",
+            "weight": 20,
+            "title": "Coordinate application incident investigation",
+            "children": []
+          },
+          {
+            "epf": "17528",
+            "weight": 40,
+            "title": "Investigate assigned functional issues",
+            "children": []
+          },
+          {
+            "epf": "17485",
+            "weight": 40,
+            "title": "Investigate authorised technical application issues",
+            "children": []
+          }
+        ]
+      }
+    ],
+    "7.1.3": [
+      {
+        "epf": "13334",
+        "weight": 100,
+        "title": null,
+        "children": [
+          {
+            "epf": "13334",
+            "weight": 60,
+            "title": "Verify application restoration and quality evidence",
+            "children": []
+          },
+          {
+            "epf": "17309",
+            "weight": 40,
+            "title": "Check completeness of restoration evidence records",
+            "children": []
+          }
+        ]
+      }
+    ],
+    "7.2.1": [
+      {
+        "epf": "16917",
+        "weight": 20,
+        "title": "Confirm improvement scope and acceptance criteria",
+        "children": []
+      },
+      {
+        "epf": "17486",
+        "weight": 40,
+        "title": "Gather assigned functional requirements",
+        "children": []
+      },
+      {
+        "epf": "17530",
+        "weight": 40,
+        "title": "Document assigned business process requirements",
+        "children": []
+      }
+    ],
+    "7.2.2": [
+      {
+        "epf": "16917",
+        "weight": 20,
+        "title": "Coordinate approved application change delivery",
+        "children": []
+      },
+      {
+        "epf": "17531",
+        "weight": 40,
+        "title": "Complete assigned functional change work",
+        "children": []
+      },
+      {
+        "epf": "17534",
+        "weight": 40,
+        "title": "Complete assigned configuration and verification work",
+        "children": []
+      }
+    ],
+    "7.2.3": [
+      {
+        "epf": "16917",
+        "weight": 20,
+        "title": "Review acceptance and authorise handover",
+        "children": []
+      },
+      {
+        "epf": "17536",
+        "weight": 80,
+        "title": "Execute assigned tests and prepare handover evidence",
+        "children": []
+      }
+    ],
+    "8.1.1": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "8.1.2": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "8.1.3": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "8.2.1": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "8.2.2": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "8.2.3": [
+      {
+        "epf": "16502",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "9.1.1": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "9.1.2": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "9.1.3": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "9.2.1": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "9.2.2": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "9.2.3": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "10.1.1": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "10.1.2": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "10.1.3": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "10.2.1": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "10.2.2": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ],
+    "10.2.3": [
+      {
+        "epf": "14673",
+        "weight": 100,
+        "title": null,
+        "children": []
+      }
+    ]
+  },
+  "shares": {
+    "16503": 8.52,
+    "17611": 21.330000000000002,
+    "17612": 19.15,
+    "17613": 11.0,
+    "11473": 1.6400000000000001,
+    "16648": 1.52,
+    "16645": 0.72,
+    "16646": 0.72,
+    "17496": 1.2,
+    "17500": 1.2,
+    "17013": 0.72,
+    "17364": 0.48,
+    "17514": 0.36,
+    "17516": 0.36,
+    "17517": 0.36,
+    "17208": 0.12,
+    "17235": 0.12,
+    "17316": 0.12,
+    "17359": 0.12,
+    "17568": 0.12,
+    "17587": 0.12,
+    "14994": 6.496,
+    "16625": 1.92,
+    "16682": 3.2640000000000002,
+    "16502": 7.76,
+    "11438": 0.56,
+    "11434": 0.09,
+    "14631": 0.16200000000000003,
+    "16917": 0.5296000000000001,
+    "17536": 0.9984000000000001,
+    "16918": 0.3,
+    "17528": 0.6,
+    "17485": 0.6,
+    "13334": 0.36,
+    "17309": 0.24,
+    "17486": 0.24,
+    "17530": 0.24,
+    "17531": 0.32,
+    "17534": 0.32,
+    "14673": 5.0
+  },
+  "pending": {
+    "11438": "16502",
+    "16625": "14994",
+    "16645": "11473",
+    "16646": "11473",
+    "16682": "14994",
+    "17208": "11473",
+    "17235": "11473",
+    "17309": "13334",
+    "17316": "11473",
+    "17359": "11473",
+    "17364": "11473",
+    "17485": "16918",
+    "17486": "16917",
+    "17500": "11473",
+    "17517": "11473",
+    "17530": "16917",
+    "17531": "16917",
+    "17534": "16917",
+    "17568": "11473",
+    "17587": "11473"
+  }
+}
